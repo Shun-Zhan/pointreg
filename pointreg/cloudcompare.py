@@ -22,8 +22,8 @@ def find_cloudcompare() -> Path | None:
         return Path(executable)
     candidates = []
     if platform.system() == "Darwin":
-        candidates = [Path("/Applications/CloudCompare.app/Contents/MacOS/CloudCompare"),
-                      Path.home() / "Applications/CloudCompare.app/Contents/MacOS/CloudCompare"]
+        candidates = [Path("/Volumes/CloudCompare/CloudCompare.app/Contents/MacOS/CloudCompare"),
+                      Path.home() / "/Volumes/CloudCompare/CloudCompare.app/Contents/MacOS/CloudCompare"]
     elif platform.system() == "Windows":
         candidates = [Path(r"C:\Program Files\CloudCompare\CloudCompare.exe"), Path(r"C:\Program Files (x86)\CloudCompare\CloudCompare.exe")]
     return next((path for path in candidates if path.exists()), None)
