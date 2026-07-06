@@ -42,6 +42,7 @@ class ICPRecord:
     rotation_delta_deg: float
     translation_delta: float
     elapsed_ms: float
+    stage: str = "direct"
 
 
 @dataclass(slots=True)
@@ -60,4 +61,3 @@ class RegistrationResult:
         data = asdict(self)
         data["transformation"] = self.transformation.tolist()
         return data
-

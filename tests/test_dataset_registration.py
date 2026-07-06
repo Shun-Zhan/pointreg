@@ -27,3 +27,6 @@ def test_reported_problem_pair_is_fixed():
     assert result.metrics["rotation_error_deg"] < 5.0
     assert result.metrics["translation_error_ratio"] < 0.02
     assert result.metrics["bridge_hops"] >= 2
+    assert result.metrics["icp_iterations"] == len(result.history)
+    assert len(result.history) > 0
+    assert len({record.stage for record in result.history}) == result.metrics["bridge_hops"]

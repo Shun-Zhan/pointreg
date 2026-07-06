@@ -18,7 +18,7 @@ python -m pytest
 conda env update -n pointreg -f environment.yml --prune
 ```
 
-不要使用 macOS 系统自带 Python。Open3D 0.19 使用 Python 3.12；若小组成员机器上求解环境失败，可先创建 Python 3.12 环境，再执行 `pip install -r requirements.txt`。
+不要使用 macOS 系统自带 Python。Open3D 0.19 使用 Python 3.12；若求解环境失败，可先创建 Python 3.12 环境，再执行 `pip install -r requirements.txt`。
 
 ## 2. 启动可视化 UI
 
@@ -27,7 +27,7 @@ conda activate pointreg
 streamlit run app.py
 ```
 
-页面可选择源/目标扫描、粗配准、精配准、体素、对应距离、截断比例与迭代次数，展示配准前后点云、评价指标、收敛曲线和变换矩阵。导出按钮会在 `outputs/ui/` 生成带颜色的 PLY、矩阵及清单；CloudCompare 未安装或路径未识别时不会影响其他功能。
+页面可选择源/目标扫描、粗配准、精配准、体素、对应距离、截断比例与迭代次数，展示配准前后点云、评价指标、收敛曲线和变换矩阵。桥接模式会汇总每条配准边的 ICP 历史，显示累计轮数、阶段名称和逐轮明细。导出按钮会在 `outputs/ui/` 生成带颜色的 PLY、矩阵及清单；CloudCompare 未安装或路径未识别时不会影响其他功能。
 
 如果 CloudCompare 不在 macOS/Windows 的常见安装目录，可先设置 `CLOUDCOMPARE_PATH` 为其可执行文件完整路径，再启动 UI。
 

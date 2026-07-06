@@ -93,7 +93,14 @@ if result and st.session_state.get("selection") == (source_name, target_name):
     tab1, tab2, tab3 = st.tabs(["收敛过程", "变换矩阵", "导出与验证"])
     with tab1:
         history = pd.DataFrame([asdict(item) for item in result.history])
-        if len(history): st.line_chart(history.set_index("iteration")[["rmse"]])
+        if len(history):
+            metric_col, note_col = st.columns([1, 3])
+            metric_col.metric("累计 ICP 迭代", len(history))
+            stages = " → ".join(history["stage"].drop_duplicates().tolist())
+            note_col.caption(f"迭代阶段：{stages}")
+            st.line_chart(history.set_index("iteration")[["rmse"]])
+            st.dataframe(history[["iteration", "stage", "rmse", "correspondences", "rotation_delta_deg", "translation_delta", "elapsed_ms"]],
+                         use_container_width=True, hide_index=True)
         else: st.info("当前算法未返回逐轮历史。")
     with tab2:
         st.dataframe(pd.DataFrame(result.transformation, columns=["c0","c1","c2","c3"]), use_container_width=True)

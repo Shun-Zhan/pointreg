@@ -9,7 +9,7 @@ import numpy as np
 
 from .io import parse_bun_conf, read_points
 from .metrics import alignment_metrics, pose_errors
-from .models import RegistrationConfig, RegistrationResult
+from .models import ICPRecord, RegistrationConfig, RegistrationResult
 from .pipeline import register_pair
 from .preprocessing import bounding_box_diagonal, preprocess_points
 from .transforms import invert_transform, relative_transform
@@ -44,6 +44,25 @@ class RegistrationGraph:
                     visited.add(neighbor)
                     queue.append((neighbor, edge_transform @ transform, path + [neighbor]))
         raise ValueError(f"no bridge path from {source} to {target}")
+
+    def combined_history(self, path: list[str]) -> list[ICPRecord]:
+        combined: list[ICPRecord] = []
+        for source, target in zip(path, path[1:]):
+            edge = self.edge_results.get(f"{source}->{target}") or self.edge_results.get(f"{target}->{source}")
+            if edge is None:
+                continue
+            stage = f"{source}→{target}"
+            for record in edge.history:
+                combined.append(ICPRecord(
+                    iteration=len(combined) + 1,
+                    rmse=record.rmse,
+                    correspondences=record.correspondences,
+                    rotation_delta_deg=record.rotation_delta_deg,
+                    translation_delta=record.translation_delta,
+                    elapsed_ms=record.elapsed_ms,
+                    stage=stage,
+                ))
+        return combined
 
 
 @lru_cache(maxsize=4)
@@ -89,6 +108,7 @@ def register_dataset_pair(data_dir: str | Path, source_name: str, target_name: s
     target_eval = preprocess_points(target, config.voxel_size, config.remove_outliers)
     result = RegistrationResult(transformation=initial, status="converged",
                                 message=f"robust bridge composition ({len(path)-1} registered edges)",
+                                history=graph.combined_history(path),
                                 source_points=len(source), target_points=len(target))
     result.metrics.update(alignment_metrics(source_eval, target_eval, initial, config.max_correspondence_distance))
     diagonal = bounding_box_diagonal(source, target)
@@ -104,5 +124,6 @@ def register_dataset_pair(data_dir: str | Path, source_name: str, target_name: s
     result.timings_ms["bridge_graph"] = graph_ms
     result.timings_ms["total"] = graph_ms
     result.metrics["bridge_hops"] = float(len(path) - 1)
+    result.metrics["icp_iterations"] = float(len(result.history))
     result.message = f"bridge path: {' -> '.join(path)}; {result.message}"
     return result
