@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.streamlit/
+outputs/
+.DS_Store
+tmp/
+output/
+*.mp4
+/专业课程设计-王小华2026.pdf
+/三维点云配准算法的研究_赵丹丹.pdf
