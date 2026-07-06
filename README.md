@@ -1,0 +1,75 @@
+# PointReg Lab：部分重合点云配准
+
+课程设计代码实现，核心为自行编写的鲁棒 Point-to-Point ICP，并以 Open3D 的 FPFH/RANSAC 与 Point-to-Plane ICP 作为粗配准和对照。项目包含本地 Web UI、命令行、批量实验、CSV/图表和 CloudCompare 导出。
+
+## 1. Conda 环境
+
+macOS（Intel/Apple Silicon）与 Windows 均使用同一份环境文件：
+
+```bash
+conda env create -f environment.yml
+conda activate pointreg
+python -m pytest
+```
+
+如果环境已经创建，可更新依赖：
+
+```bash
+conda env update -n pointreg -f environment.yml --prune
+```
+
+不要使用 macOS 系统自带 Python。Open3D 0.19 使用 Python 3.12；若小组成员机器上求解环境失败，可先创建 Python 3.12 环境，再执行 `pip install -r requirements.txt`。
+
+## 2. 启动可视化 UI
+
+```bash
+conda activate pointreg
+streamlit run app.py
+```
+
+页面可选择源/目标扫描、粗配准、精配准、体素、对应距离、截断比例与迭代次数，展示配准前后点云、评价指标、收敛曲线和变换矩阵。导出按钮会在 `outputs/ui/` 生成带颜色的 PLY、矩阵及清单；CloudCompare 未安装或路径未识别时不会影响其他功能。
+
+如果 CloudCompare 不在 macOS/Windows 的常见安装目录，可先设置 `CLOUDCOMPARE_PATH` 为其可执行文件完整路径，再启动 UI。
+
+## 3. 命令行
+
+单组实验并使用 `bun.conf` 计算真值误差：
+
+```bash
+python -m pointreg.cli pair bunny/data/bun000.ply bunny/data/bun045.ply \
+  --conf bunny/data/bun.conf --coarse fpfh --fine custom_icp \
+  --voxel 0.0025 --distance 0.01 --output outputs/bun000_bun045
+```
+
+Windows PowerShell 可将命令写在一行，路径也可使用反斜杠。增加 `--open-cloudcompare` 会尝试打开目标与已配准源点云。
+
+运行默认高/中/低重叠算法对比，生成 CSV 和图表：
+
+```bash
+python -m pointreg.cli batch --data-dir bunny/data --output outputs/experiments
+```
+
+增加 `--full` 会进一步运行重叠率、体素尺度、固定随机种子的初始扰动和 10 次预热速度实验，并分别输出 CSV。
+
+## 4. 方法与评价
+
+- 粗配准：无、PCA（枚举轴排列和符号）、FPFH + RANSAC。
+- Stanford Bunny 数据集的 FPFH 模式使用高重叠扫描构成的桥接图；困难组合先沿图组合多段点云配准结果，避免单次 RANSAC 被 Bunny 的近似对称结构误导。桥接边仍由 FPFH + 自研 ICP 估计，`bun.conf` 只用于结果评分。
+- 精配准：自研 Point-to-Point ICP、Open3D Point-to-Plane ICP。
+- 自研 ICP：最近邻、最大距离过滤、截断对应、SVD、反射修正、增量累计、RMSE/位姿增量收敛。
+- 指标：Fitness、Inlier RMSE、有效对应数、旋转误差、平移误差、相对平移误差和各阶段耗时。
+- 默认成功标准：旋转误差小于 5°且平移误差小于点云包围盒对角线的 2%。
+
+`bun.conf` 的每一行按 `tx ty tz qx qy qz qw` 解析，记录的是扫描局部坐标到统一世界坐标的变换。因此源到目标的真值为 `inverse(T_target_world) @ T_source_world`。Stanford 旧版 ZipPack/Vrip 的四元数旋转约定与现代 Python 主动列向量约定方向相反，解析时需转置旋转矩阵；代码中已显式处理，并有真实数据回归测试防止方向再次写反。
+
+## 5. 目录
+
+```text
+pointreg/       算法、数据、评价、实验和 CloudCompare 接口
+tests/          单元测试与导出测试
+app.py          Streamlit UI
+bunny/data/     Stanford Bunny 多视角扫描与真值
+outputs/        运行后生成的点云、JSON、CSV 和图表
+```
+
+速度结论应区分“FPFH/RANSAC 全局初始化”和“已有初值的 ICP 连续帧跟踪”。批量性能测试应先预热并重复至少 10 次，再报告中位数和波动范围。
