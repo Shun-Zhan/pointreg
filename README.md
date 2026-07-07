@@ -4,7 +4,7 @@
 
 ## 1. Conda 环境
 
-macOS（Intel/Apple Silicon）与 Windows 均使用同一份环境文件：
+macOS（Intel/Apple Silicon）、Windows 与 Ubuntu/Debian 均可用同一份环境文件（conda 或 pip）：
 
 ```bash
 conda env create -f environment.yml
@@ -20,6 +20,34 @@ conda env update -n pointreg -f environment.yml --prune
 
 不要使用 macOS 系统自带 Python。Open3D 0.19 使用 Python 3.12；若求解环境失败，可先创建 Python 3.12 环境，再执行 `pip install -r requirements.txt`。
 
+
+### Ubuntu / Debian
+
+```bash
+sudo apt update
+sudo apt install -y cloudcompare python3-venv python3-pip
+```
+
+环境可用 Conda（推荐，与 macOS/Windows 相同）：
+
+```bash
+conda env create -f environment.yml
+conda activate pointreg
+python -m pytest
+```
+
+或使用 venv + pip：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m pytest
+```
+
+`apt install cloudcompare` 一般安装 `/usr/bin/cloudcompare`。若未自动识别，设置 `CLOUDCOMPARE_PATH=/usr/bin/cloudcompare`。无桌面环境时批量实验会在缺少 `DISPLAY` 时使用 matplotlib `Agg` 后端。可选：运行 `bash scripts/ubuntu_setup.sh` 完成 apt 与 venv 依赖安装。
+
+
 ## 2. 启动可视化 UI
 
 ```bash
@@ -29,7 +57,7 @@ streamlit run app.py
 
 页面可选择源/目标扫描、粗配准、精配准、体素、对应距离、截断比例与迭代次数，展示配准前后点云、评价指标、收敛曲线和变换矩阵。桥接模式会汇总每条配准边的 ICP 历史，显示累计轮数、阶段名称和逐轮明细。导出按钮会在 `outputs/ui/` 生成带颜色的 PLY、矩阵及清单；CloudCompare 未安装或路径未识别时不会影响其他功能。
 
-如果 CloudCompare 不在 macOS/Windows 的常见安装目录，可先设置 `CLOUDCOMPARE_PATH` 为其可执行文件完整路径，再启动 UI。
+如果 CloudCompare 不在各平台常见安装目录（macOS `/Applications`、Windows `Program Files`、Ubuntu `apt install cloudcompare`），可先设置 `CLOUDCOMPARE_PATH` 为其可执行文件完整路径，再启动 UI。
 
 ## 3. 命令行
 

@@ -17,15 +17,29 @@ def find_cloudcompare() -> Path | None:
     configured = os.environ.get("CLOUDCOMPARE_PATH")
     if configured and Path(configured).exists():
         return Path(configured)
-    executable = shutil.which("CloudCompare") or shutil.which("CloudCompare.exe")
-    if executable:
-        return Path(executable)
-    candidates = []
-    if platform.system() == "Darwin":
-        candidates = [Path("/Volumes/CloudCompare/CloudCompare.app/Contents/MacOS/CloudCompare"),
-                      Path.home() / "/Volumes/CloudCompare/CloudCompare.app/Contents/MacOS/CloudCompare"]
-    elif platform.system() == "Windows":
-        candidates = [Path(r"C:\Program Files\CloudCompare\CloudCompare.exe"), Path(r"C:\Program Files (x86)\CloudCompare\CloudCompare.exe")]
+    for name in ("CloudCompare", "cloudcompare", "CloudCompare.exe"):
+        executable = shutil.which(name)
+        if executable:
+            return Path(executable)
+    candidates: list[Path] = []
+    system = platform.system()
+    if system == "Darwin":
+        candidates = [
+            Path("/Volumes/CloudCompare/CloudCompare.app/Contents/MacOS/CloudCompare"),
+            Path("/Applications/CloudCompare.app/Contents/MacOS/CloudCompare"),
+        ]
+    elif system == "Windows":
+        candidates = [
+            Path(r"C:\Program Files\CloudCompare\CloudCompare.exe"),
+            Path(r"C:\Program Files (x86)\CloudCompare\CloudCompare.exe"),
+        ]
+    elif system == "Linux":
+        candidates = [
+            Path("/usr/bin/CloudCompare"),
+            Path("/usr/bin/cloudcompare"),
+            Path("/snap/bin/cloudcompare"),
+            Path("/snap/bin/CloudCompare"),
+        ]
     return next((path for path in candidates if path.exists()), None)
 
 

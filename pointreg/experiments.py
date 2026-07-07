@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import platform
 from dataclasses import asdict, replace
 from pathlib import Path
 from time import perf_counter
@@ -105,6 +107,10 @@ def run_full_suite(data_dir: str | Path, output_dir: str | Path, base_config: Re
 
 def _save_plots(frame: pd.DataFrame, output_dir: Path) -> None:
     try:
+        if platform.system() == "Linux" and not os.environ.get("DISPLAY"):
+            import matplotlib
+
+            matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError:
         return
