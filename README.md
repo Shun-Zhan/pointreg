@@ -57,6 +57,8 @@ streamlit run app.py
 
 页面可选择源/目标扫描、粗配准、精配准、体素、对应距离、截断比例与迭代次数，展示配准前后点云、评价指标、收敛曲线和变换矩阵。桥接模式会汇总每条配准边的 ICP 历史，显示累计轮数、阶段名称和逐轮明细。导出按钮会在 `outputs/ui/` 生成带颜色的 PLY、矩阵及清单；CloudCompare 未安装或路径未识别时不会影响其他功能。
 
+程序会在 UI 初始化或首次调用配准接口时预加载 Open3D。该冷启动只在每个 Python 进程中发生一次，并单独记录为 `runtime_warmup`；`load`、`coarse`、`fine` 和 `total` 不再混入动态库加载耗时。预加载是把启动成本移到计时区间外，并不会减少首次启动程序的实际墙钟时间。
+
 如果 CloudCompare 不在各平台常见安装目录（macOS `/Applications`、Windows `Program Files`、Ubuntu `apt install cloudcompare`），可先设置 `CLOUDCOMPARE_PATH` 为其可执行文件完整路径，再启动 UI。
 
 ## 3. 命令行

@@ -12,6 +12,7 @@ from .metrics import alignment_metrics, pose_errors
 from .models import ICPRecord, RegistrationConfig, RegistrationResult
 from .pipeline import register_pair
 from .preprocessing import bounding_box_diagonal, preprocess_points
+from .runtime import preload_open3d
 from .transforms import invert_transform, relative_transform
 
 # A spanning tree of strongly overlapping Stanford Bunny scans.  Difficult
@@ -91,6 +92,7 @@ def register_dataset_pair(data_dir: str | Path, source_name: str, target_name: s
     data_dir = Path(data_dir).resolve()
     if source_name == target_name:
         raise ValueError("source and target must be different")
+    runtime_warmup_ms = preload_open3d()
     graph_started = perf_counter()
     graph = build_bunny_graph(str(data_dir), config.voxel_size, config.max_correspondence_distance,
                               config.trim_fraction, config.max_iterations, config.random_seed)
@@ -122,6 +124,7 @@ def register_dataset_pair(data_dir: str | Path, source_name: str, target_name: s
     else:
         result.success = result.metrics["fitness"] > 0
     result.timings_ms["bridge_graph"] = graph_ms
+    result.timings_ms["runtime_warmup"] = runtime_warmup_ms
     result.timings_ms["total"] = graph_ms
     result.metrics["bridge_hops"] = float(len(path) - 1)
     result.metrics["icp_iterations"] = float(len(result.history))

@@ -11,6 +11,7 @@ from .io import read_points
 from .metrics import alignment_metrics, pose_errors
 from .models import RegistrationConfig, RegistrationResult
 from .preprocessing import bounding_box_diagonal, preprocess_points
+from .runtime import preload_open3d
 
 
 def _point_to_plane(source: np.ndarray, target: np.ndarray, initial: np.ndarray, config: RegistrationConfig) -> tuple[np.ndarray, str, str]:
@@ -34,6 +35,7 @@ def register_pair(source: str | Path | np.ndarray, target: str | Path | np.ndarr
     config = config or RegistrationConfig()
     config.validate()
     result = RegistrationResult()
+    result.timings_ms["runtime_warmup"] = preload_open3d()
     total_start = perf_counter()
     try:
         started = perf_counter()

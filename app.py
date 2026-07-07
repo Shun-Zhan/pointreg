@@ -13,12 +13,20 @@ from pointreg.io import parse_bun_conf, read_points
 from pointreg.models import RegistrationConfig
 from pointreg.pipeline import register_pair
 from pointreg.dataset import register_dataset_pair
+from pointreg.runtime import preload_open3d
 from pointreg.transforms import apply_transform, relative_transform
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "bunny" / "data"
-
 st.set_page_config(page_title="PointReg Lab", page_icon="◌", layout="wide")
+
+
+@st.cache_resource(show_spinner="正在预加载 Open3D…")
+def warm_up_runtime() -> float:
+    return preload_open3d()
+
+
+warm_up_runtime()
 st.markdown("""<style>
 .stApp {background: radial-gradient(circle at 15% 10%, #102b3d 0, #07131d 38%, #050b11 100%);}
 [data-testid="stMetric"] {background:#0b1c28;border:1px solid #17384b;padding:14px;border-radius:12px;}
