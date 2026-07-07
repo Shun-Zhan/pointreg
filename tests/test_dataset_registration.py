@@ -31,3 +31,6 @@ def test_reported_problem_pair_is_fixed():
     assert len(result.history) > 0
     assert len({record.stage for record in result.history}) == result.metrics["bridge_hops"]
     assert result.timings_ms["total"] >= result.timings_ms["bridge_graph"]
+    measured_stages = ["bridge_graph", "metadata", "load", "preprocess", "evaluate"]
+    assert all(result.timings_ms[name] >= 0 for name in measured_stages)
+    assert result.timings_ms["total"] >= sum(result.timings_ms[name] for name in measured_stages)

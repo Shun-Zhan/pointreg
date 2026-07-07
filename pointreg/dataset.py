@@ -99,20 +99,27 @@ def register_dataset_pair(data_dir: str | Path, source_name: str, target_name: s
                               config.trim_fraction, config.max_iterations, config.random_seed)
     initial, path = graph.transform(source_name, target_name)
     graph_ms = (perf_counter() - graph_started) * 1000
+    metadata_started = perf_counter()
     ground_truth = None
     conf = data_dir / "bun.conf"
     if conf.exists():
         poses = parse_bun_conf(conf)
         if source_name in poses and target_name in poses:
             ground_truth = relative_transform(poses[source_name], poses[target_name])
+    metadata_ms = (perf_counter() - metadata_started) * 1000
+    load_started = perf_counter()
     source = read_points(data_dir / f"{source_name}.ply")
     target = read_points(data_dir / f"{target_name}.ply")
+    load_ms = (perf_counter() - load_started) * 1000
+    preprocess_started = perf_counter()
     source_eval = preprocess_points(source, config.voxel_size, config.remove_outliers)
     target_eval = preprocess_points(target, config.voxel_size, config.remove_outliers)
+    preprocess_ms = (perf_counter() - preprocess_started) * 1000
     result = RegistrationResult(transformation=initial, status="converged",
                                 message=f"robust bridge composition ({len(path)-1} registered edges)",
                                 history=graph.combined_history(path),
                                 source_points=len(source), target_points=len(target))
+    evaluate_started = perf_counter()
     result.metrics.update(alignment_metrics(source_eval, target_eval, initial, config.max_correspondence_distance))
     diagonal = bounding_box_diagonal(source, target)
     result.metrics["bbox_diagonal"] = diagonal
@@ -124,7 +131,12 @@ def register_dataset_pair(data_dir: str | Path, source_name: str, target_name: s
         result.success = rotation_error < config.success_rotation_deg and ratio < config.success_translation_ratio
     else:
         result.success = result.metrics["fitness"] > 0
+    evaluate_ms = (perf_counter() - evaluate_started) * 1000
     result.timings_ms["bridge_graph"] = graph_ms
+    result.timings_ms["metadata"] = metadata_ms
+    result.timings_ms["load"] = load_ms
+    result.timings_ms["preprocess"] = preprocess_ms
+    result.timings_ms["evaluate"] = evaluate_ms
     result.timings_ms["runtime_warmup"] = runtime_warmup_ms
     result.timings_ms["total"] = (perf_counter() - total_started) * 1000
     result.metrics["bridge_hops"] = float(len(path) - 1)

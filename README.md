@@ -59,6 +59,8 @@ streamlit run app.py
 
 程序会在 UI 初始化时预加载 Open3D，并预构建默认参数的 Bunny 稳健桥接图。Open3D 冷启动只在每个 Python 进程中发生一次，并单独记录为 `runtime_warmup`；默认桥接图也会在首次点击运行前进入缓存，因此按钮结果中的 `total` 不再混入动态库加载或默认桥接图构建耗时。更改体素、距离、保留比例、迭代上限或随机种子会产生新的桥接图缓存键，首次使用该参数组合仍需构建一次。预加载只是把一次性成本移到 UI 初始化阶段，并不会减少首次打开程序的实际墙钟时间。
 
+桥接配准的 `total` 表示一次按钮操作的端到端耗时，包含点云读取和指标计算；同时提供 `bridge_graph`、`metadata`、`load`、`preprocess`、`evaluate` 分段计时。与普通配准路径做性能对比时，应比较相同阶段，或明确使用端到端口径。
+
 如果 CloudCompare 不在各平台常见安装目录（macOS `/Applications`、Windows `Program Files`、Ubuntu `apt install cloudcompare`），可先设置 `CLOUDCOMPARE_PATH` 为其可执行文件完整路径，再启动 UI。
 
 ## 3. 命令行
