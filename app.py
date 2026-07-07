@@ -84,7 +84,7 @@ result = st.session_state.get("result")
 if result and st.session_state.get("selection") == (source_name, target_name):
     cols = st.columns(5)
     values = [("状态", result.status), ("Fitness", f"{result.metrics.get('fitness',0):.3f}"), ("RMSE", f"{result.metrics.get('rmse',float('nan')):.6f}"),
-              ("旋转误差", f"{result.metrics.get('rotation_error_deg',float('nan')):.2f}°"), ("总耗时", f"{result.timings_ms.get('total',0):.1f} ms")]
+              ("旋转误差", f"{result.metrics.get('rotation_error_deg',float('nan')):.2f}°"), ("总耗时", f"{result.timings_ms.get('total',0):.2f} ms")]
     for col, (label, value) in zip(cols, values): col.metric(label, value)
     st.caption(result.message)
     left, right = st.columns(2)
@@ -100,11 +100,13 @@ if result and st.session_state.get("selection") == (source_name, target_name):
             note_col.caption(f"迭代阶段：{stages}")
             st.line_chart(history.set_index("iteration")[["rmse"]])
             st.dataframe(history[["iteration", "stage", "rmse", "correspondences", "rotation_delta_deg", "translation_delta", "elapsed_ms"]],
-                         use_container_width=True, hide_index=True)
+                         use_container_width=True, hide_index=True,
+                         column_config={"elapsed_ms": st.column_config.NumberColumn("elapsed_ms", format="%.2f ms")})
         else: st.info("当前算法未返回逐轮历史。")
     with tab2:
         st.dataframe(pd.DataFrame(result.transformation, columns=["c0","c1","c2","c3"]), use_container_width=True)
-        st.json({"metrics":result.metrics,"timings_ms":result.timings_ms,"message":result.message})
+        formatted_timings = {name: f"{value:.2f} ms" for name, value in result.timings_ms.items()}
+        st.json({"metrics":result.metrics,"timings_ms":formatted_timings,"message":result.message})
     with tab3:
         out = ROOT / "outputs" / "ui" / f"{source_name}_to_{target_name}"
         if st.button("导出 CloudCompare 文件"):
