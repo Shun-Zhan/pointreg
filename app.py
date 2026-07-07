@@ -12,7 +12,7 @@ from pointreg.cloudcompare import export_cloudcompare, launch_cloudcompare
 from pointreg.io import parse_bun_conf, read_points
 from pointreg.models import RegistrationConfig
 from pointreg.pipeline import register_pair
-from pointreg.dataset import register_dataset_pair
+from pointreg.dataset import build_bunny_graph, register_dataset_pair
 from pointreg.runtime import preload_open3d
 from pointreg.transforms import apply_transform, relative_transform
 
@@ -21,9 +21,10 @@ DATA = ROOT / "bunny" / "data"
 st.set_page_config(page_title="PointReg Lab", page_icon="◌", layout="wide")
 
 
-@st.cache_resource(show_spinner="正在预加载 Open3D…")
-def warm_up_runtime() -> float:
-    return preload_open3d()
+@st.cache_resource(show_spinner="正在预加载 Open3D 并构建稳健配准缓存…")
+def warm_up_runtime() -> None:
+    preload_open3d()
+    build_bunny_graph(str(DATA.resolve()), .0025, .01, .8, 60, 42)
 
 
 warm_up_runtime()
