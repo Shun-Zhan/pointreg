@@ -83,4 +83,23 @@ def test_icp_builds_target_index_only_once(monkeypatch):
                                 transform_tolerance=0, min_correspondences=20)
     _, history, _, _ = custom_icp(source, target, np.eye(4), config)
     assert builds == 1
-    assert queries == len(history) == config.max_iterations
+    assert len(history) == config.max_iterations
+    assert queries == len(history) + 1
+
+
+def test_history_rmse_matches_updated_iteration_transform():
+    rng = np.random.default_rng(29)
+    source = rng.uniform(-.15, .15, size=(300, 3))
+    target = apply_transform(source, make_transform(rotation_z(.06), np.array([.01, -.008, .004])))
+    config = RegistrationConfig(coarse_method="none", max_correspondence_distance=.08,
+                                trim_fraction=.8, max_iterations=1, min_correspondences=20)
+    transform, history, status, _ = custom_icp(source, target, np.eye(4), config)
+    distances, _ = nearest_neighbors(apply_transform(source, transform), target)
+    valid = np.flatnonzero(distances <= config.max_correspondence_distance)
+    keep = max(config.min_correspondences, int(len(valid) * config.trim_fraction))
+    valid = valid[np.argsort(distances[valid])[:keep]]
+    expected_rmse = float(np.sqrt(np.mean(distances[valid] ** 2)))
+    assert status == "max_iterations"
+    assert len(history) == 1
+    assert np.isclose(history[0].rmse, expected_rmse)
+    assert history[0].correspondences == len(valid)
