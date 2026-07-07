@@ -84,7 +84,7 @@ python -m pointreg.cli batch --data-dir bunny/data --output outputs/experiments
 - 粗配准：无、PCA（枚举轴排列和符号）、FPFH + RANSAC。
 - Stanford Bunny 数据集的 FPFH 模式使用高重叠扫描构成的桥接图；困难组合先沿图组合多段点云配准结果，避免单次 RANSAC 被 Bunny 的近似对称结构误导。桥接边仍由 FPFH + 自研 ICP 估计，`bun.conf` 只用于结果评分。
 - 精配准：自研 Point-to-Point ICP、Open3D Point-to-Plane ICP。
-- 自研 ICP：最近邻、最大距离过滤、截断对应、SVD、反射修正、增量累计、RMSE/位姿增量收敛。
+- 自研 ICP：对固定目标点云只构建一次 KD-tree，并在全部迭代中复用；随后执行最近邻、最大距离过滤、截断对应、SVD、反射修正、增量累计及 RMSE/位姿增量收敛。
 - 指标：Fitness、Inlier RMSE、有效对应数、旋转误差、平移误差、相对平移误差和各阶段耗时。
 - 默认成功标准：旋转误差小于 5°且平移误差小于点云包围盒对角线的 2%。
 

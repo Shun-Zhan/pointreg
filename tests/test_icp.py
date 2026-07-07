@@ -1,7 +1,9 @@
 import numpy as np
+import pointreg.icp as icp_module
 
 from pointreg.icp import custom_icp, solve_rigid_svd
 from pointreg.models import RegistrationConfig
+from pointreg.nearest import NearestNeighborIndex, nearest_neighbors
 from pointreg.transforms import apply_transform, make_transform
 
 
@@ -40,3 +42,45 @@ def test_icp_safe_failure_without_correspondences():
     assert status == "failed" and not history
     assert "correspondences" in message
 
+
+def test_reusable_nearest_index_matches_one_shot_queries():
+    rng = np.random.default_rng(17)
+    reference = rng.normal(size=(200, 3))
+    first_query = rng.normal(size=(30, 3))
+    second_query = rng.normal(size=(40, 3))
+    index = NearestNeighborIndex(reference)
+    tree_identity = id(index._tree)
+    for query in (first_query, second_query):
+        expected_distances, expected_indices = nearest_neighbors(query, reference)
+        distances, indices = index.query(query)
+        assert np.allclose(distances, expected_distances)
+        assert np.array_equal(indices, expected_indices)
+        assert id(index._tree) == tree_identity
+
+
+def test_icp_builds_target_index_only_once(monkeypatch):
+    builds = 0
+    queries = 0
+    original_index = icp_module.NearestNeighborIndex
+
+    class CountingIndex:
+        def __init__(self, reference):
+            nonlocal builds
+            builds += 1
+            self.index = original_index(reference)
+
+        def query(self, points):
+            nonlocal queries
+            queries += 1
+            return self.index.query(points)
+
+    monkeypatch.setattr(icp_module, "NearestNeighborIndex", CountingIndex)
+    rng = np.random.default_rng(23)
+    source = rng.uniform(-.1, .1, size=(200, 3))
+    target = source + np.array([.01, -.005, .002])
+    config = RegistrationConfig(coarse_method="none", max_correspondence_distance=.05,
+                                trim_fraction=1, max_iterations=8, rmse_tolerance=0,
+                                transform_tolerance=0, min_correspondences=20)
+    _, history, _, _ = custom_icp(source, target, np.eye(4), config)
+    assert builds == 1
+    assert queries == len(history) == config.max_iterations

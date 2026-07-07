@@ -5,7 +5,7 @@ from time import perf_counter
 import numpy as np
 
 from .models import ICPRecord, RegistrationConfig
-from .nearest import nearest_neighbors
+from .nearest import NearestNeighborIndex
 from .transforms import apply_transform, make_transform, rotation_angle_deg
 
 
@@ -32,10 +32,11 @@ def custom_icp(source: np.ndarray, target: np.ndarray, initial: np.ndarray, conf
     transform = initial.copy()
     history: list[ICPRecord] = []
     previous_rmse = float("inf")
+    target_index = NearestNeighborIndex(target)
     for iteration in range(1, config.max_iterations + 1):
         started = perf_counter()
         moved = apply_transform(source, transform)
-        distances, indices = nearest_neighbors(moved, target)
+        distances, indices = target_index.query(moved)
         valid_indices = np.flatnonzero(distances <= config.max_correspondence_distance)
         if len(valid_indices) >= config.min_correspondences and config.trim_fraction < 1:
             keep = max(config.min_correspondences, int(len(valid_indices) * config.trim_fraction))
@@ -54,4 +55,3 @@ def custom_icp(source: np.ndarray, target: np.ndarray, initial: np.ndarray, conf
             return transform, history, "converged", "convergence tolerances reached"
         previous_rmse = rmse
     return transform, history, "max_iterations", "maximum iterations reached"
-
