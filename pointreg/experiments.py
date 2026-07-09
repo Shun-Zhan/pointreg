@@ -17,6 +17,7 @@ from .transforms import relative_transform
 
 
 METHODS = [("none", "custom_icp"), ("pca", "custom_icp"), ("fpfh", "custom_icp"), ("fpfh", "point_to_plane")]
+SUPPORTED_OVERLAP_THRESHOLD = 0.5
 
 
 def run_method_comparison(data_dir: str | Path, output_dir: str | Path, pairs: list[tuple[str, str]] | None = None, base_config: RegistrationConfig | None = None) -> pd.DataFrame:
@@ -60,8 +61,13 @@ def run_all_pairs(data_dir: str | Path, output_dir: str | Path, pairs: list[tupl
             points_cache[target_name] = read_points(target_path)
         overlap = symmetric_overlap(points_cache[source_name], points_cache[target_name],
                                     ground_truth, base.max_correspondence_distance)
+        supported_by_overlap = overlap >= SUPPORTED_OVERLAP_THRESHOLD
+        failure_reason = ""
+        if not result.success:
+            failure_reason = "low_overlap_unsupported" if not supported_by_overlap else "registration_failed"
         rows.append({"source": source_name, "target": target_name, "overlap": overlap,
-                     "status": result.status, "success": result.success, **result.metrics,
+                     "supported_by_overlap": supported_by_overlap, "status": result.status,
+                     "success": result.success, "failure_reason": failure_reason, **result.metrics,
                      **{f"time_{key}_ms": value for key, value in result.timings_ms.items()},
                      "message": result.message})
     frame = pd.DataFrame(rows).sort_values(["success", "rotation_error_deg", "translation_error_ratio"],

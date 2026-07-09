@@ -10,6 +10,7 @@ import streamlit as st
 
 from pointreg.cloudcompare import export_cloudcompare, launch_cloudcompare
 from pointreg.io import parse_bun_conf, read_points
+from pointreg.metrics import symmetric_overlap
 from pointreg.models import RegistrationConfig
 from pointreg.pipeline import register_pair
 from pointreg.runtime import preload_open3d
@@ -75,11 +76,13 @@ source, target = read_points(source_path), read_points(target_path)
 if run:
     config = RegistrationConfig(coarse_method=coarse, fine_method=fine, voxel_size=voxel, max_correspondence_distance=distance, trim_fraction=trim, max_iterations=iterations)
     gt = None
+    st.session_state.overlap = None
     conf = DATA / "bun.conf"
     if conf.exists():
         poses = parse_bun_conf(conf)
         if source_name in poses and target_name in poses:
             gt = relative_transform(poses[source_name], poses[target_name])
+            st.session_state.overlap = symmetric_overlap(source, target, gt, distance)
     with st.spinner("正在计算粗配准与 ICP…"):
         st.session_state.result = register_pair(source, target, config, ground_truth=gt)
         st.session_state.selection = (source_name, target_name)
@@ -91,6 +94,11 @@ if result and st.session_state.get("selection") == (source_name, target_name):
               ("旋转误差", f"{result.metrics.get('rotation_error_deg',float('nan')):.2f}°"), ("总耗时", f"{result.timings_ms.get('total',0):.2f} ms")]
     for col, (label, value) in zip(cols, values): col.metric(label, value)
     st.caption(result.message)
+    overlap = st.session_state.get("overlap")
+    if overlap is not None:
+        st.caption(f"真值重叠率估计：{overlap:.3f}（仅用于实验分析，不参与求解）")
+        if overlap < 0.5:
+            st.warning("该组合真实重叠率低于 0.5，属于严格两帧直接配准的低重叠困难样本；在不使用桥接图或其他先验的条件下，大角度错配是预期失败案例。")
     if not result.success:
         st.warning("当前两帧直接配准未通过成功阈值。该结果通常表示源/目标重叠不足、局部形状过于对称，或 FPFH/RANSAC 初值落入错误姿态；程序不会自动读取第三帧点云或使用桥接图。")
     left, right = st.columns(2)

@@ -87,6 +87,8 @@ python -m pointreg.cli batch --data-dir bunny/data --output outputs/experiments
 python -m pointreg.cli batch --all-pairs --data-dir bunny/data --output outputs/all_pairs
 ```
 
+该表会额外输出 `overlap`、`supported_by_overlap` 和 `failure_reason`。在当前 Bunny 数据上，严格两帧算法的稳定工作区间约为重叠率不低于 0.5；低于该范围的组合通常会被标为 `low_overlap_unsupported`，应在报告中作为低重叠失败案例分析。
+
 增加 `--full` 会进一步运行重叠率、体素尺度、固定随机种子的初始扰动和 10 次预热速度实验，并分别输出 CSV。
 
 ## 4. 方法与评价
@@ -95,7 +97,7 @@ python -m pointreg.cli batch --all-pairs --data-dir bunny/data --output outputs/
 - FPFH + RANSAC：只在当前源点云和目标点云之间提取 FPFH 特征并执行 RANSAC 粗配准；不会使用第三帧点云或多帧桥接图。`bun.conf` 只用于结果评分，不参与求解变换矩阵。
 - 精配准：自研 Point-to-Point ICP、Open3D Point-to-Plane ICP。
 - 自研 ICP：对固定目标点云只构建一次 KD-tree，并在全部迭代中复用；随后执行最近邻、最大距离过滤、截断对应、SVD、反射修正、增量累计及 RMSE/位姿增量收敛。逐轮 RMSE 在应用本轮位姿增量后计算，因此曲线与该轮累计变换严格对应。
-- 低重叠或近似对称组合可能出现大角度错配；UI 会把未通过阈值的结果标为不可靠。若课程要求严格只能使用源/目标两帧，这类组合应作为失败案例分析，而不是用额外扫描桥接掩盖。
+- 低重叠或近似对称组合可能出现大角度错配；UI 会把未通过阈值的结果标为不可靠。若课程要求严格只能使用源/目标两帧，这类组合应作为失败案例分析，而不是用额外扫描桥接掩盖。Bunny 全组合实验中，重叠率不低于 0.5 的组合可作为该算法的主要有效范围。
 - 指标：Fitness、Inlier RMSE、有效对应数、旋转误差、平移误差、相对平移误差和各阶段耗时。
 - 默认成功标准：旋转误差小于 5°且平移误差小于点云包围盒对角线的 2%。
 
