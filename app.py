@@ -12,7 +12,6 @@ from pointreg.cloudcompare import export_cloudcompare, launch_cloudcompare
 from pointreg.io import parse_bun_conf, read_points
 from pointreg.models import RegistrationConfig
 from pointreg.pipeline import register_pair
-from pointreg.dataset import build_bunny_graph, register_dataset_pair
 from pointreg.runtime import preload_open3d
 from pointreg.transforms import apply_transform, relative_transform
 
@@ -21,10 +20,9 @@ DATA = ROOT / "bunny" / "data"
 st.set_page_config(page_title="PointReg Lab", page_icon="◌", layout="wide")
 
 
-@st.cache_resource(show_spinner="正在预加载 Open3D 并构建稳健配准缓存…")
+@st.cache_resource(show_spinner="正在预加载 Open3D…")
 def warm_up_runtime() -> None:
     preload_open3d()
-    build_bunny_graph(str(DATA.resolve()), .0025, .01, .8, 60, 42)
 
 
 warm_up_runtime()
@@ -83,10 +81,7 @@ if run:
         if source_name in poses and target_name in poses:
             gt = relative_transform(poses[source_name], poses[target_name])
     with st.spinner("正在计算粗配准与 ICP…"):
-        if coarse == "fpfh":
-            st.session_state.result = register_dataset_pair(DATA, source_name, target_name, config)
-        else:
-            st.session_state.result = register_pair(source, target, config, ground_truth=gt)
+        st.session_state.result = register_pair(source, target, config, ground_truth=gt)
         st.session_state.selection = (source_name, target_name)
 
 result = st.session_state.get("result")
@@ -96,6 +91,8 @@ if result and st.session_state.get("selection") == (source_name, target_name):
               ("旋转误差", f"{result.metrics.get('rotation_error_deg',float('nan')):.2f}°"), ("总耗时", f"{result.timings_ms.get('total',0):.2f} ms")]
     for col, (label, value) in zip(cols, values): col.metric(label, value)
     st.caption(result.message)
+    if not result.success:
+        st.warning("当前两帧直接配准未通过成功阈值。该结果通常表示源/目标重叠不足、局部形状过于对称，或 FPFH/RANSAC 初值落入错误姿态；程序不会自动读取第三帧点云或使用桥接图。")
     left, right = st.columns(2)
     left.plotly_chart(cloud_figure(source, target, None, "配准前"), use_container_width=True)
     right.plotly_chart(cloud_figure(source, target, result.transformation, "配准后"), use_container_width=True)
