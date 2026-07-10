@@ -12,6 +12,7 @@ from .io import read_points
 from .metrics import alignment_metrics, pose_errors
 from .models import ICPRecord, RegistrationConfig, RegistrationResult
 from .preprocessing import bounding_box_diagonal, preprocess_points
+from .runtime import preload_open3d
 
 
 def _candidate_score(source: np.ndarray, target: np.ndarray, transform: np.ndarray, threshold: float) -> tuple[float, float, float]:
@@ -118,6 +119,7 @@ def register_pair(source: str | Path | np.ndarray, target: str | Path | np.ndarr
     config = config or RegistrationConfig()
     config.validate()
     result = RegistrationResult()
+    result.timings_ms["runtime_warmup"] = preload_open3d()
     total_start = perf_counter()
     try:
         started = perf_counter()

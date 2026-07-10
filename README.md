@@ -57,6 +57,10 @@ streamlit run app.py
 
 页面可选择源/目标扫描、粗配准、精配准、体素、对应距离、截断比例与迭代次数，展示配准前后点云、评价指标、收敛曲线和变换矩阵。桥接模式会汇总每条配准边的 ICP 历史，显示累计轮数、阶段名称和逐轮明细。导出按钮会在 `outputs/ui/` 生成带颜色的 PLY、矩阵及清单；CloudCompare 未安装或路径未识别时不会影响其他功能。
 
+程序会在 UI 初始化时预加载 Open3D，并预构建默认参数的 Bunny 稳健桥接图。Open3D 冷启动只在每个 Python 进程中发生一次，并单独记录为 `runtime_warmup`；默认桥接图也会在首次点击运行前进入缓存，因此按钮结果中的 `total` 不再混入动态库加载或默认桥接图构建耗时。更改体素、距离、保留比例、迭代上限或随机种子会产生新的桥接图缓存键，首次使用该参数组合仍需构建一次。预加载只是把一次性成本移到 UI 初始化阶段，并不会减少首次打开程序的实际墙钟时间。
+
+桥接配准的 `total` 表示一次按钮操作的端到端耗时，包含点云读取和指标计算；同时提供 `bridge_graph`、`metadata`、`load`、`preprocess`、`evaluate` 分段计时。与普通配准路径做性能对比时，应比较相同阶段，或明确使用端到端口径。
+
 如果 CloudCompare 不在各平台常见安装目录（macOS `/Applications`、Windows `Program Files`、Ubuntu `apt install cloudcompare`），可先设置 `CLOUDCOMPARE_PATH` 为其可执行文件完整路径，再启动 UI。
 
 ## 3. 命令行
@@ -84,7 +88,7 @@ python -m pointreg.cli batch --data-dir bunny/data --output outputs/experiments
 - 粗配准：无、PCA（枚举轴排列和符号）、FPFH + RANSAC。
 - Stanford Bunny 数据集的 FPFH 模式使用高重叠扫描构成的桥接图；困难组合先沿图组合多段点云配准结果，避免单次 RANSAC 被 Bunny 的近似对称结构误导。桥接边仍由 FPFH + 自研 ICP 估计，`bun.conf` 只用于结果评分。
 - 精配准：自研 Point-to-Point ICP、Open3D Point-to-Plane ICP。
-- 自研 ICP：最近邻、最大距离过滤、截断对应、SVD、反射修正、增量累计、RMSE/位姿增量收敛。
+- 自研 ICP：对固定目标点云只构建一次 KD-tree，并在全部迭代中复用；随后执行最近邻、最大距离过滤、截断对应、SVD、反射修正、增量累计及 RMSE/位姿增量收敛。逐轮 RMSE 在应用本轮位姿增量后计算，因此曲线与该轮累计变换严格对应。
 - 指标：Fitness、Inlier RMSE、有效对应数、旋转误差、平移误差、相对平移误差和各阶段耗时。
 - 默认成功标准：旋转误差小于 5°且平移误差小于点云包围盒对角线的 2%。
 

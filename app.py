@@ -12,13 +12,22 @@ from pointreg.cloudcompare import export_cloudcompare, launch_cloudcompare
 from pointreg.io import parse_bun_conf, read_points
 from pointreg.models import RegistrationConfig
 from pointreg.pipeline import register_pair
-from pointreg.dataset import register_dataset_pair
+from pointreg.dataset import build_bunny_graph, register_dataset_pair
+from pointreg.runtime import preload_open3d
 from pointreg.transforms import apply_transform, relative_transform
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "bunny" / "data"
-
 st.set_page_config(page_title="PointReg Lab", page_icon="◌", layout="wide")
+
+
+@st.cache_resource(show_spinner="正在预加载 Open3D 并构建稳健配准缓存…")
+def warm_up_runtime() -> None:
+    preload_open3d()
+    build_bunny_graph(str(DATA.resolve()), .0025, .01, .8, 60, 42)
+
+
+warm_up_runtime()
 st.markdown("""<style>
 .stApp {background: radial-gradient(circle at 15% 10%, #102b3d 0, #07131d 38%, #050b11 100%);}
 [data-testid="stMetric"] {background:#0b1c28;border:1px solid #17384b;padding:14px;border-radius:12px;}
@@ -84,7 +93,7 @@ result = st.session_state.get("result")
 if result and st.session_state.get("selection") == (source_name, target_name):
     cols = st.columns(5)
     values = [("状态", result.status), ("Fitness", f"{result.metrics.get('fitness',0):.3f}"), ("RMSE", f"{result.metrics.get('rmse',float('nan')):.6f}"),
-              ("旋转误差", f"{result.metrics.get('rotation_error_deg',float('nan')):.2f}°"), ("总耗时", f"{result.timings_ms.get('total',0):.1f} ms")]
+              ("旋转误差", f"{result.metrics.get('rotation_error_deg',float('nan')):.2f}°"), ("总耗时", f"{result.timings_ms.get('total',0):.2f} ms")]
     for col, (label, value) in zip(cols, values): col.metric(label, value)
     st.caption(result.message)
     left, right = st.columns(2)
@@ -100,11 +109,13 @@ if result and st.session_state.get("selection") == (source_name, target_name):
             note_col.caption(f"迭代阶段：{stages}")
             st.line_chart(history.set_index("iteration")[["rmse"]])
             st.dataframe(history[["iteration", "stage", "rmse", "correspondences", "rotation_delta_deg", "translation_delta", "elapsed_ms"]],
-                         use_container_width=True, hide_index=True)
+                         use_container_width=True, hide_index=True,
+                         column_config={"elapsed_ms": st.column_config.NumberColumn("elapsed_ms", format="%.2f ms")})
         else: st.info("当前算法未返回逐轮历史。")
     with tab2:
         st.dataframe(pd.DataFrame(result.transformation, columns=["c0","c1","c2","c3"]), use_container_width=True)
-        st.json({"metrics":result.metrics,"timings_ms":result.timings_ms,"message":result.message})
+        formatted_timings = {name: f"{value:.2f} ms" for name, value in result.timings_ms.items()}
+        st.json({"metrics":result.metrics,"timings_ms":formatted_timings,"message":result.message})
     with tab3:
         out = ROOT / "outputs" / "ui" / f"{source_name}_to_{target_name}"
         if st.button("导出 CloudCompare 文件"):

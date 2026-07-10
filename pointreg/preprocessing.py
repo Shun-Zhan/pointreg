@@ -9,6 +9,7 @@ def voxel_downsample(points: np.ndarray, voxel_size: float) -> np.ndarray:
         return points.copy()
     keys = np.floor(points / voxel_size).astype(np.int64)
     _, inverse = np.unique(keys, axis=0, return_inverse=True)
+    inverse = np.reshape(inverse, -1)
     counts = np.bincount(inverse)
     result = np.column_stack([
         np.bincount(inverse, weights=points[:, axis]) / counts for axis in range(3)
@@ -35,4 +36,3 @@ def bounding_box_diagonal(*clouds: np.ndarray) -> float:
         return 0.0
     joined = np.vstack(valid)
     return float(np.linalg.norm(joined.max(axis=0) - joined.min(axis=0)))
-

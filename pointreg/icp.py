@@ -5,7 +5,7 @@ from time import perf_counter
 import numpy as np
 
 from .models import ICPRecord, RegistrationConfig
-from .nearest import nearest_neighbors
+from .nearest import NearestNeighborIndex
 from .transforms import apply_transform, make_transform, rotation_angle_deg
 
 
@@ -26,26 +26,34 @@ def solve_rigid_svd(source: np.ndarray, target: np.ndarray) -> np.ndarray:
     return make_transform(rotation, translation)
 
 
+def _select_correspondences(distances: np.ndarray, config: RegistrationConfig) -> np.ndarray:
+    valid_indices = np.flatnonzero(distances <= config.max_correspondence_distance)
+    if len(valid_indices) >= config.min_correspondences and config.trim_fraction < 1:
+        keep = max(config.min_correspondences, int(len(valid_indices) * config.trim_fraction))
+        valid_indices = valid_indices[np.argsort(distances[valid_indices])[:keep]]
+    return valid_indices
+
+
 def custom_icp(source: np.ndarray, target: np.ndarray, initial: np.ndarray, config: RegistrationConfig) -> tuple[np.ndarray, list[ICPRecord], str, str]:
     if len(source) < 3 or len(target) < 3:
         return initial.copy(), [], "failed", "point cloud is empty or too small"
     transform = initial.copy()
     history: list[ICPRecord] = []
     previous_rmse = float("inf")
+    target_index = NearestNeighborIndex(target)
+    moved = apply_transform(source, transform)
+    distances, indices = target_index.query(moved)
+    valid_indices = _select_correspondences(distances, config)
     for iteration in range(1, config.max_iterations + 1):
         started = perf_counter()
-        moved = apply_transform(source, transform)
-        distances, indices = nearest_neighbors(moved, target)
-        valid_indices = np.flatnonzero(distances <= config.max_correspondence_distance)
-        if len(valid_indices) >= config.min_correspondences and config.trim_fraction < 1:
-            keep = max(config.min_correspondences, int(len(valid_indices) * config.trim_fraction))
-            order = np.argsort(distances[valid_indices])[:keep]
-            valid_indices = valid_indices[order]
         if len(valid_indices) < config.min_correspondences:
             return transform, history, "failed", f"only {len(valid_indices)} valid correspondences"
         delta = solve_rigid_svd(moved[valid_indices], target[indices[valid_indices]])
         transform = delta @ transform
-        rmse = float(np.sqrt(np.mean(distances[valid_indices] ** 2)))
+        moved = apply_transform(source, transform)
+        distances, indices = target_index.query(moved)
+        valid_indices = _select_correspondences(distances, config)
+        rmse = float(np.sqrt(np.mean(distances[valid_indices] ** 2))) if len(valid_indices) else float("inf")
         rotation_delta = rotation_angle_deg(delta[:3, :3])
         translation_delta = float(np.linalg.norm(delta[:3, 3]))
         history.append(ICPRecord(iteration, rmse, len(valid_indices), rotation_delta, translation_delta, (perf_counter() - started) * 1000))
@@ -54,4 +62,3 @@ def custom_icp(source: np.ndarray, target: np.ndarray, initial: np.ndarray, conf
             return transform, history, "converged", "convergence tolerances reached"
         previous_rmse = rmse
     return transform, history, "max_iterations", "maximum iterations reached"
-

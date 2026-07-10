@@ -36,6 +36,17 @@ def test_find_cloudcompare_which_lowercase(monkeypatch):
     assert find_cloudcompare() == Path("/usr/bin/cloudcompare")
 
 
+def test_find_cloudcompare_in_macos_user_applications(tmp_path, monkeypatch):
+    monkeypatch.delenv("CLOUDCOMPARE_PATH", raising=False)
+    monkeypatch.setattr(cc_module.shutil, "which", lambda _: None)
+    monkeypatch.setattr(cc_module.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(cc_module.Path, "home", classmethod(lambda cls: tmp_path))
+    executable = tmp_path / "Applications/CloudCompare.app/Contents/MacOS/CloudCompare"
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+    assert find_cloudcompare() == executable
+
+
 @pytest.mark.skipif(platform.system() != "Linux", reason="Linux integration smoke")
 def test_find_cloudcompare_linux_smoke(monkeypatch):
     monkeypatch.delenv("CLOUDCOMPARE_PATH", raising=False)

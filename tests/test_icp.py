@@ -1,7 +1,9 @@
 import numpy as np
+import pointreg.icp as icp_module
 
 from pointreg.icp import custom_icp, solve_rigid_svd
 from pointreg.models import RegistrationConfig
+from pointreg.nearest import NearestNeighborIndex, nearest_neighbors
 from pointreg.transforms import apply_transform, make_transform
 
 
@@ -40,3 +42,64 @@ def test_icp_safe_failure_without_correspondences():
     assert status == "failed" and not history
     assert "correspondences" in message
 
+
+def test_reusable_nearest_index_matches_one_shot_queries():
+    rng = np.random.default_rng(17)
+    reference = rng.normal(size=(200, 3))
+    first_query = rng.normal(size=(30, 3))
+    second_query = rng.normal(size=(40, 3))
+    index = NearestNeighborIndex(reference)
+    tree_identity = id(index._tree)
+    for query in (first_query, second_query):
+        expected_distances, expected_indices = nearest_neighbors(query, reference)
+        distances, indices = index.query(query)
+        assert np.allclose(distances, expected_distances)
+        assert np.array_equal(indices, expected_indices)
+        assert id(index._tree) == tree_identity
+
+
+def test_icp_builds_target_index_only_once(monkeypatch):
+    builds = 0
+    queries = 0
+    original_index = icp_module.NearestNeighborIndex
+
+    class CountingIndex:
+        def __init__(self, reference):
+            nonlocal builds
+            builds += 1
+            self.index = original_index(reference)
+
+        def query(self, points):
+            nonlocal queries
+            queries += 1
+            return self.index.query(points)
+
+    monkeypatch.setattr(icp_module, "NearestNeighborIndex", CountingIndex)
+    rng = np.random.default_rng(23)
+    source = rng.uniform(-.1, .1, size=(200, 3))
+    target = source + np.array([.01, -.005, .002])
+    config = RegistrationConfig(coarse_method="none", max_correspondence_distance=.05,
+                                trim_fraction=1, max_iterations=8, rmse_tolerance=0,
+                                transform_tolerance=0, min_correspondences=20)
+    _, history, _, _ = custom_icp(source, target, np.eye(4), config)
+    assert builds == 1
+    assert len(history) == config.max_iterations
+    assert queries == len(history) + 1
+
+
+def test_history_rmse_matches_updated_iteration_transform():
+    rng = np.random.default_rng(29)
+    source = rng.uniform(-.15, .15, size=(300, 3))
+    target = apply_transform(source, make_transform(rotation_z(.06), np.array([.01, -.008, .004])))
+    config = RegistrationConfig(coarse_method="none", max_correspondence_distance=.08,
+                                trim_fraction=.8, max_iterations=1, min_correspondences=20)
+    transform, history, status, _ = custom_icp(source, target, np.eye(4), config)
+    distances, _ = nearest_neighbors(apply_transform(source, transform), target)
+    valid = np.flatnonzero(distances <= config.max_correspondence_distance)
+    keep = max(config.min_correspondences, int(len(valid) * config.trim_fraction))
+    valid = valid[np.argsort(distances[valid])[:keep]]
+    expected_rmse = float(np.sqrt(np.mean(distances[valid] ** 2)))
+    assert status == "max_iterations"
+    assert len(history) == 1
+    assert np.isclose(history[0].rmse, expected_rmse)
+    assert history[0].correspondences == len(valid)
