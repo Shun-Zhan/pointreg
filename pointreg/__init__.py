@@ -2,6 +2,5 @@
 
 from .models import ICPRecord, RegistrationConfig, RegistrationResult
 from .pipeline import register_pair
-from .dataset import register_dataset_pair
 
-__all__ = ["ICPRecord", "RegistrationConfig", "RegistrationResult", "register_pair", "register_dataset_pair"]
+__all__ = ["ICPRecord", "RegistrationConfig", "RegistrationResult", "register_pair"]

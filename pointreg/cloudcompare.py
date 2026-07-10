@@ -27,6 +27,7 @@ def find_cloudcompare() -> Path | None:
         candidates = [
             Path("/Volumes/CloudCompare/CloudCompare.app/Contents/MacOS/CloudCompare"),
             Path("/Applications/CloudCompare.app/Contents/MacOS/CloudCompare"),
+            Path.home() / "Applications/CloudCompare.app/Contents/MacOS/CloudCompare",
         ]
     elif system == "Windows":
         candidates = [

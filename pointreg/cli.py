@@ -5,11 +5,10 @@ import json
 from pathlib import Path
 
 from .cloudcompare import export_cloudcompare, launch_cloudcompare
-from .experiments import run_full_suite, run_method_comparison
+from .experiments import run_all_pairs, run_full_suite, run_method_comparison
 from .io import parse_bun_conf, read_points
 from .models import RegistrationConfig
 from .pipeline import register_pair
-from .dataset import register_dataset_pair
 from .transforms import relative_transform
 
 
@@ -31,6 +30,7 @@ def parser() -> argparse.ArgumentParser:
     batch = commands.add_parser("batch", help="运行算法对比实验")
     batch.add_argument("--data-dir", type=Path, default=Path("bunny/data"))
     batch.add_argument("--output", type=Path, default=Path("outputs/experiments"))
+    batch.add_argument("--all-pairs", action="store_true", help="遍历 bun.conf 中所有有序两帧组合")
     batch.add_argument("--full", action="store_true", help="运行扰动、重叠、体素与速度完整实验")
     return root
 
@@ -38,7 +38,10 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     if args.command == "batch":
-        if args.full:
+        if args.all_pairs:
+            frame = run_all_pairs(args.data_dir, args.output)
+            print(frame.to_string(index=False))
+        elif args.full:
             frames = run_full_suite(args.data_dir, args.output)
             print("\n".join(f"{name}: {len(frame)} rows" for name, frame in frames.items()))
         else:
@@ -51,10 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.conf:
         poses = parse_bun_conf(args.conf)
         ground_truth = relative_transform(poses[args.source.stem], poses[args.target.stem])
-    if args.coarse == "fpfh" and args.source.parent.resolve() == args.target.parent.resolve() and (args.source.parent / "bun.conf").exists():
-        result = register_dataset_pair(args.source.parent, args.source.stem, args.target.stem, config)
-    else:
-        result = register_pair(args.source, args.target, config, ground_truth=ground_truth)
+    result = register_pair(args.source, args.target, config, ground_truth=ground_truth)
     source, target = read_points(args.source), read_points(args.target)
     files = export_cloudcompare(args.output, source, target, result.transformation, result.to_dict())
     (args.output / "result.json").write_text(json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")

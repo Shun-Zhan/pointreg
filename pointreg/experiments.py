@@ -2,22 +2,22 @@ from __future__ import annotations
 
 import os
 import platform
-from dataclasses import asdict, replace
+from dataclasses import replace
+from itertools import permutations
 from pathlib import Path
-from time import perf_counter
 
 import numpy as np
 import pandas as pd
 
-from .io import parse_bun_conf
+from .io import parse_bun_conf, read_points
 from .metrics import symmetric_overlap
 from .models import RegistrationConfig
 from .pipeline import register_pair
 from .transforms import relative_transform
-from .io import read_points
 
 
 METHODS = [("none", "custom_icp"), ("pca", "custom_icp"), ("fpfh", "custom_icp"), ("fpfh", "point_to_plane")]
+SUPPORTED_OVERLAP_THRESHOLD = 0.5
 
 
 def run_method_comparison(data_dir: str | Path, output_dir: str | Path, pairs: list[tuple[str, str]] | None = None, base_config: RegistrationConfig | None = None) -> pd.DataFrame:
@@ -37,6 +37,42 @@ def run_method_comparison(data_dir: str | Path, output_dir: str | Path, pairs: l
     frame = pd.DataFrame(rows)
     frame.to_csv(output_dir / "method_comparison.csv", index=False)
     _save_plots(frame, output_dir)
+    return frame
+
+
+def run_all_pairs(data_dir: str | Path, output_dir: str | Path, pairs: list[tuple[str, str]] | None = None, base_config: RegistrationConfig | None = None) -> pd.DataFrame:
+    """Evaluate strict two-cloud registration for every ordered scan pair."""
+    data_dir, output_dir = Path(data_dir), Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    poses = parse_bun_conf(data_dir / "bun.conf")
+    names = sorted(poses)
+    pairs = pairs or list(permutations(names, 2))
+    base = base_config or RegistrationConfig()
+    points_cache: dict[str, np.ndarray] = {}
+    rows = []
+    for source_name, target_name in pairs:
+        source_path = data_dir / f"{source_name}.ply"
+        target_path = data_dir / f"{target_name}.ply"
+        ground_truth = relative_transform(poses[source_name], poses[target_name])
+        result = register_pair(source_path, target_path, base, ground_truth=ground_truth)
+        if source_name not in points_cache:
+            points_cache[source_name] = read_points(source_path)
+        if target_name not in points_cache:
+            points_cache[target_name] = read_points(target_path)
+        overlap = symmetric_overlap(points_cache[source_name], points_cache[target_name],
+                                    ground_truth, base.max_correspondence_distance)
+        supported_by_overlap = overlap >= SUPPORTED_OVERLAP_THRESHOLD
+        failure_reason = ""
+        if not result.success:
+            failure_reason = "low_overlap_unsupported" if not supported_by_overlap else "registration_failed"
+        rows.append({"source": source_name, "target": target_name, "overlap": overlap,
+                     "supported_by_overlap": supported_by_overlap, "status": result.status,
+                     "success": result.success, "failure_reason": failure_reason, **result.metrics,
+                     **{f"time_{key}_ms": value for key, value in result.timings_ms.items()},
+                     "message": result.message})
+    frame = pd.DataFrame(rows).sort_values(["success", "rotation_error_deg", "translation_error_ratio"],
+                                           ascending=[True, False, False])
+    frame.to_csv(output_dir / "all_pairs.csv", index=False)
     return frame
 
 

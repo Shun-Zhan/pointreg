@@ -1,36 +1,45 @@
-from itertools import permutations
 from pathlib import Path
 
-from pointreg.dataset import build_bunny_graph, register_dataset_pair
+from pointreg.experiments import run_all_pairs
 from pointreg.io import parse_bun_conf
-from pointreg.metrics import pose_errors
+from pointreg.models import RegistrationConfig
+from pointreg.pipeline import register_pair
 from pointreg.transforms import relative_transform
 
 
 DATA = Path("bunny/data").resolve()
 
 
-def test_bunny_bridge_graph_covers_all_ordered_pairs():
+def test_fpfh_registration_uses_only_selected_source_and_target():
     poses = parse_bun_conf(DATA / "bun.conf")
-    graph = build_bunny_graph(str(DATA))
-    for source, target in permutations(poses, 2):
-        estimated, path = graph.transform(source, target)
-        rotation_error, translation_error = pose_errors(estimated, relative_transform(poses[source], poses[target]))
-        assert path[0] == source and path[-1] == target
-        assert rotation_error < 5.0, f"{source}->{target}: {rotation_error} deg"
-        assert translation_error < 0.005, f"{source}->{target}: {translation_error} m"
+    source_name, target_name = "bun000", "bun045"
+    config = RegistrationConfig(coarse_method="fpfh", fine_method="custom_icp")
+    ground_truth = relative_transform(poses[source_name], poses[target_name])
+    result = register_pair(DATA / f"{source_name}.ply", DATA / f"{target_name}.ply", config, ground_truth=ground_truth)
 
-
-def test_reported_problem_pair_is_fixed():
-    result = register_dataset_pair(DATA, "bun270", "bun045")
     assert result.success
     assert result.metrics["rotation_error_deg"] < 5.0
     assert result.metrics["translation_error_ratio"] < 0.02
-    assert result.metrics["bridge_hops"] >= 2
-    assert result.metrics["icp_iterations"] == len(result.history)
+    assert "bridge_hops" not in result.metrics
+    assert "bridge_graph" not in result.timings_ms
     assert len(result.history) > 0
-    assert len({record.stage for record in result.history}) == result.metrics["bridge_hops"]
-    assert result.timings_ms["total"] >= result.timings_ms["bridge_graph"]
-    measured_stages = ["bridge_graph", "metadata", "load", "preprocess", "evaluate"]
+    assert {record.stage for record in result.history} == {"direct"}
+
+
+def test_direct_registration_keeps_stage_timings_pair_scoped():
+    config = RegistrationConfig(coarse_method="pca", fine_method="custom_icp", max_iterations=5)
+    result = register_pair(DATA / "bun000.ply", DATA / "bun045.ply", config)
+
+    measured_stages = ["runtime_warmup", "load", "preprocess", "coarse", "fine"]
     assert all(result.timings_ms[name] >= 0 for name in measured_stages)
-    assert result.timings_ms["total"] >= sum(result.timings_ms[name] for name in measured_stages)
+    assert "bridge_graph" not in result.timings_ms
+    assert result.timings_ms["total"] >= sum(result.timings_ms[name] for name in measured_stages if name != "runtime_warmup")
+
+
+def test_all_pairs_report_uses_direct_registration(tmp_path):
+    frame = run_all_pairs(DATA, tmp_path, pairs=[("bun000", "bun045")])
+
+    assert len(frame) == 1
+    assert frame.iloc[0]["success"]
+    assert "bridge_graph" not in frame.columns
+    assert (tmp_path / "all_pairs.csv").exists()
