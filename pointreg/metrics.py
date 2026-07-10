@@ -29,3 +29,16 @@ def symmetric_overlap(source: np.ndarray, target: np.ndarray, ground_truth: np.n
     b = float(np.mean(backward <= threshold)) if len(backward) else 0.0
     return (a + b) / 2.0
 
+
+def symmetric_alignment_metrics(source: np.ndarray, target: np.ndarray, transform: np.ndarray, threshold: float) -> dict[str, float]:
+    forward = alignment_metrics(source, target, transform, threshold)
+    inverse = alignment_metrics(target, source, invert_transform(transform), threshold)
+    return {
+        "symmetric_fitness": (forward["fitness"] + inverse["fitness"]) / 2.0,
+        "symmetric_rmse": (forward["rmse"] + inverse["rmse"]) / 2.0,
+        "symmetric_correspondences": (forward["correspondences"] + inverse["correspondences"]) / 2.0,
+        "fitness": forward["fitness"],
+        "rmse": forward["rmse"],
+        "correspondences": forward["correspondences"],
+    }
+

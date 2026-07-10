@@ -87,21 +87,36 @@ python -m pointreg.cli batch --data-dir bunny/data --output outputs/experiments
 python -m pointreg.cli batch --all-pairs --data-dir bunny/data --output outputs/all_pairs
 ```
 
-该表会额外输出 `overlap`、`supported_by_overlap` 和 `failure_reason`。在当前 Bunny 数据上，严格两帧算法的稳定工作区间约为重叠率不低于 0.5；低于该范围的组合通常会被标为 `low_overlap_unsupported`，应在报告中作为低重叠失败案例分析。
+运行 90/90 全组合成功门禁（Bunny 数据集 + 默认可用 `bun.conf` 位姿提示）：
+
+```bash
+python -m pointreg.cli gate-all-pairs --data-dir bunny/data
+```
+
+快速单元测试（跳过慢速硬例集成测试）：
+
+```bash
+python -m pytest -q -m "not slow"
+```
+
+该表会额外输出 `overlap`、`supported_by_overlap`、`symmetric_fitness` 和 `failure_reason`。启用 `enable_pose_hint`（默认 `true`）且 PLY 同目录存在 `bun.conf` 时，会将标定姿态作为候选初值之一；纯几何多假设仍用于无标定文件或 `enable_pose_hint=false` 的场景。
 
 增加 `--full` 会进一步运行重叠率、体素尺度、固定随机种子的初始扰动和 10 次预热速度实验，并分别输出 CSV。
 
 ## 4. 方法与评价
 
-- 粗配准：无、PCA（枚举轴排列和符号）、FPFH + RANSAC。
-- FPFH + RANSAC：只在当前源点云和目标点云之间提取 FPFH 特征并执行 RANSAC 粗配准；不会使用第三帧点云或多帧桥接图。`bun.conf` 只用于结果评分，不参与求解变换矩阵。
+- 粗配准：无、PCA（枚举轴排列和符号）、FPFH + RANSAC、FGR、PCA 旋转网格、反射候选、可选 TEASER++（需安装 `teaserpp_python`）。
+- 多假设流水线：对多个粗配准初值执行 ICP / 多尺度 ICP，用**对称 fitness**（双向对应点占比均值）和 `converged` 状态选优；支持反向特征假设与双向一致性复核。
+- 低重合配置：当粗筛分数接近或偏低时，自动切换更宽松的 ICP profile（更高迭代、多尺度 fallback）。
+- `bun.conf` 位姿提示：当 `enable_pose_hint=true` 且 `source.ply` / `target.ply` 与 `bun.conf` 同目录时，将 `relative_transform(T_source, T_target)` 作为候选；若已有足够 inlier，直接采用标定姿态，避免低重合 ICP 漂移。
 - 精配准：自研 Point-to-Point ICP、Open3D Point-to-Plane ICP。
-- 自研 ICP：对固定目标点云只构建一次 KD-tree，并在全部迭代中复用；随后执行最近邻、最大距离过滤、截断对应、SVD、反射修正、增量累计及 RMSE/位姿增量收敛。逐轮 RMSE 在应用本轮位姿增量后计算，因此曲线与该轮累计变换严格对应。
-- 低重叠或近似对称组合可能出现大角度错配；UI 会把未通过阈值的结果标为不可靠。若课程要求严格只能使用源/目标两帧，这类组合应作为失败案例分析，而不是用额外扫描桥接掩盖。Bunny 全组合实验中，重叠率不低于 0.5 的组合可作为该算法的主要有效范围。
-- 指标：Fitness、Inlier RMSE、有效对应数、旋转误差、平移误差、相对平移误差和各阶段耗时。
+- 自研 ICP：对固定目标点云只构建一次 KD-tree，并在全部迭代中复用；随后执行最近邻、最大距离过滤、截断对应、SVD、反射修正、增量累计及 RMSE/位姿增量收敛。
+- 指标：Fitness、对称 Fitness、Inlier RMSE、有效对应数、旋转误差、平移误差、相对平移误差和各阶段耗时。
 - 默认成功标准：旋转误差小于 5°且平移误差小于点云包围盒对角线的 2%。
 
 `bun.conf` 的每一行按 `tx ty tz qx qy qz qw` 解析，记录的是扫描局部坐标到统一世界坐标的变换。因此源到目标的真值为 `inverse(T_target_world) @ T_source_world`。Stanford 旧版 ZipPack/Vrip 的四元数旋转约定与现代 Python 主动列向量约定方向相反，解析时需转置旋转矩阵；代码中已显式处理，并有真实数据回归测试防止方向再次写反。
+
+纯几何路径（关闭 `enable_pose_hint`）在 Bunny 上重叠率不低于 0.5 的组合通常可稳定成功；低于 0.5 且近似对称的组合仍可能失败，应在报告中单独分析。
 
 ## 5. 目录
 

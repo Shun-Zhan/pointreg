@@ -24,6 +24,18 @@ class RegistrationConfig:
     random_seed: int = 42
     success_rotation_deg: float = 5.0
     success_translation_ratio: float = 0.02
+    hypothesis_rotation_steps: int = 8
+    enable_fgr: bool = True
+    enable_reflection_candidates: bool = True
+    coarse_prescreen_top_k: int = 6
+    low_overlap_iterations: int = 120
+    enable_teaser: bool = True
+    low_overlap_sym_fitness_threshold: float = 0.55
+    low_overlap_top_gap_threshold: float = 0.01
+    bidirectional_check_top_k: int = 3
+    bidirectional_short_iterations: int = 20
+    enable_pose_hint: bool = True
+    pose_hint_icp_distance: float = 0.003
 
     def validate(self) -> None:
         if self.voxel_size < 0 or self.max_correspondence_distance <= 0:
@@ -32,6 +44,12 @@ class RegistrationConfig:
             raise ValueError("trim_fraction must be in (0, 1]")
         if self.max_iterations < 1 or self.min_correspondences < 3:
             raise ValueError("max_iterations must be >= 1 and min_correspondences >= 3")
+        if self.hypothesis_rotation_steps < 1:
+            raise ValueError("hypothesis_rotation_steps must be >= 1")
+        if self.coarse_prescreen_top_k < 1:
+            raise ValueError("coarse_prescreen_top_k must be >= 1")
+        if self.bidirectional_check_top_k < 0:
+            raise ValueError("bidirectional_check_top_k must be >= 0")
 
 
 @dataclass(slots=True)

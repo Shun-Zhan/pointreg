@@ -89,9 +89,12 @@ if run:
 
 result = st.session_state.get("result")
 if result and st.session_state.get("selection") == (source_name, target_name):
-    cols = st.columns(5)
-    values = [("状态", result.status), ("Fitness", f"{result.metrics.get('fitness',0):.3f}"), ("RMSE", f"{result.metrics.get('rmse',float('nan')):.6f}"),
-              ("旋转误差", f"{result.metrics.get('rotation_error_deg',float('nan')):.2f}°"), ("总耗时", f"{result.timings_ms.get('total',0):.2f} ms")]
+    cols = st.columns(6)
+    values = [("状态", result.status), ("Fitness", f"{result.metrics.get('fitness',0):.3f}"),
+              ("对称Fitness", f"{result.metrics.get('symmetric_fitness',0):.3f}"),
+              ("RMSE", f"{result.metrics.get('rmse',float('nan')):.6f}"),
+              ("旋转误差", f"{result.metrics.get('rotation_error_deg',float('nan')):.2f}°"),
+              ("总耗时", f"{result.timings_ms.get('total',0):.2f} ms")]
     for col, (label, value) in zip(cols, values): col.metric(label, value)
     st.caption(result.message)
     overlap = st.session_state.get("overlap")
@@ -100,7 +103,7 @@ if result and st.session_state.get("selection") == (source_name, target_name):
         if overlap < 0.5:
             st.warning("该组合真实重叠率低于 0.5，属于严格两帧直接配准的低重叠困难样本；在不使用桥接图或其他先验的条件下，大角度错配是预期失败案例。")
     if not result.success:
-        st.warning("当前两帧直接配准未通过成功阈值。该结果通常表示源/目标重叠不足、局部形状过于对称，或 FPFH/RANSAC 初值落入错误姿态；程序不会自动读取第三帧点云或使用桥接图。")
+        st.warning("当前两帧直接配准未通过成功阈值。程序已尝试多假设粗配准（FPFH/FGR/PCA旋转网格/反射等）与对称评分选优；若仍失败，通常表示重叠过低或形状对称导致假解。")
     left, right = st.columns(2)
     left.plotly_chart(cloud_figure(source, target, None, "配准前"), use_container_width=True)
     right.plotly_chart(cloud_figure(source, target, result.transformation, "配准后"), use_container_width=True)

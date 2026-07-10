@@ -39,6 +39,7 @@ def test_low_overlap_pair_recovers_from_rough_fpfh_initial(monkeypatch):
         min_correspondences=20,
         rmse_tolerance=1e-10,
         transform_tolerance=1e-9,
+        enable_pose_hint=False,
     )
 
     result = register_pair(source, target, config, ground_truth=expected)

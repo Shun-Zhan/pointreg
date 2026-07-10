@@ -76,6 +76,16 @@ def run_all_pairs(data_dir: str | Path, output_dir: str | Path, pairs: list[tupl
     return frame
 
 
+def assert_all_pairs_success(data_dir: str | Path, base_config: RegistrationConfig | None = None) -> pd.DataFrame:
+    """Run all ordered pairs and raise if any registration fails success criteria."""
+    frame = run_all_pairs(data_dir, Path("/tmp/pointreg_gate_all_pairs"), base_config=base_config)
+    failures = frame[~frame["success"]]
+    if not failures.empty:
+        preview = failures[["source", "target", "overlap", "rotation_error_deg", "translation_error_ratio", "message"]].head(10)
+        raise AssertionError(f"{len(failures)}/{len(frame)} pairs failed success criteria:\n{preview.to_string(index=False)}")
+    return frame
+
+
 def run_speed_test(source: Path, target: Path, config: RegistrationConfig, repeats: int = 10, warmups: int = 1) -> pd.DataFrame:
     for _ in range(warmups):
         register_pair(source, target, config)

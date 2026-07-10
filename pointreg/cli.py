@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from .cloudcompare import export_cloudcompare, launch_cloudcompare
-from .experiments import run_all_pairs, run_full_suite, run_method_comparison
+from .experiments import assert_all_pairs_success, run_all_pairs, run_full_suite, run_method_comparison
 from .io import parse_bun_conf, read_points
 from .models import RegistrationConfig
 from .pipeline import register_pair
@@ -32,11 +32,17 @@ def parser() -> argparse.ArgumentParser:
     batch.add_argument("--output", type=Path, default=Path("outputs/experiments"))
     batch.add_argument("--all-pairs", action="store_true", help="遍历 bun.conf 中所有有序两帧组合")
     batch.add_argument("--full", action="store_true", help="运行扰动、重叠、体素与速度完整实验")
+    gate = commands.add_parser("gate-all-pairs", help="全组合 90/90 成功门禁")
+    gate.add_argument("--data-dir", type=Path, default=Path("bunny/data"))
     return root
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if args.command == "gate-all-pairs":
+        frame = assert_all_pairs_success(args.data_dir)
+        print(f"gate passed: {len(frame)}/{len(frame)} pairs succeeded")
+        return 0
     if args.command == "batch":
         if args.all_pairs:
             frame = run_all_pairs(args.data_dir, args.output)
