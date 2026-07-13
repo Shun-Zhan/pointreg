@@ -5,9 +5,6 @@ from itertools import permutations, product
 import numpy as np
 
 from .nearest import nearest_neighbors
-from .transforms import apply_transform
-
-from .nearest import nearest_neighbors
 from .transforms import apply_transform, make_transform
 
 
@@ -116,6 +113,60 @@ def multiscale_fpfh_registration(
     return best_transform
 
 
+def gcransac_from_correspondences(
+    source_points: np.ndarray,
+    target_points: np.ndarray,
+    probabilities: np.ndarray | None = None,
+    *,
+    correspondence_distance: float = 0.01,
+    max_iters: int = 10000,
+    seed: int = 42,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Estimate a source-to-target transform from externally supplied matches."""
+    try:
+        import pygcransac
+    except ImportError as exc:
+        raise RuntimeError("GC-RANSAC requires pygcransac") from exc
+    source_points = np.asarray(source_points, dtype=np.float64)
+    target_points = np.asarray(target_points, dtype=np.float64)
+    if source_points.ndim != 2 or source_points.shape[1] != 3 or target_points.shape != source_points.shape:
+        raise ValueError("source_points and target_points must be matching (N, 3) arrays")
+    if len(source_points) < 3:
+        raise ValueError("GC-RANSAC needs at least three correspondences")
+    if correspondence_distance <= 0 or max_iters < 1:
+        raise ValueError("correspondence_distance and max_iters must be positive")
+    if not (np.isfinite(source_points).all() and np.isfinite(target_points).all()):
+        raise ValueError("GC-RANSAC correspondences must be finite")
+    if probabilities is None:
+        weights = np.ones(len(source_points), dtype=np.float64)
+    else:
+        weights = np.asarray(probabilities, dtype=np.float64).reshape(-1)
+        if len(weights) != len(source_points) or not np.isfinite(weights).all():
+            raise ValueError("probabilities must be a finite vector matching the correspondence count")
+        weights = np.maximum(weights, 0.0)
+        maximum = float(weights.max())
+        weights = weights / maximum if maximum > 0 else np.ones(len(weights), dtype=np.float64)
+    correspondences = np.concatenate([source_points, target_points], axis=1)
+    np.random.seed(seed)
+    model, inliers = pygcransac.findRigidTransform(
+        correspondences,
+        weights,
+        threshold=correspondence_distance,
+        conf=0.999,
+        max_iters=max_iters,
+        neighborhood=0,
+        use_space_partitioning=True,
+    )
+    if model is None:
+        raise RuntimeError("GC-RANSAC could not estimate a transform")
+    inlier_mask = np.asarray(inliers, dtype=bool).reshape(-1)
+    if len(inlier_mask) != len(source_points) or int(inlier_mask.sum()) < 3:
+        raise RuntimeError("GC-RANSAC returned fewer than three inliers")
+    # pygcransac uses row-vector homogeneous coordinates; PointReg uses active
+    # column-vector transforms, so transpose its 4x4 output.
+    return np.asarray(model, dtype=float).T, inlier_mask
+
+
 def gcransac_fpfh_registration(
     source: np.ndarray,
     target: np.ndarray,
@@ -125,7 +176,6 @@ def gcransac_fpfh_registration(
     """Estimate a rigid transform with GC-RANSAC from mutual FPFH matches."""
     try:
         from scipy.spatial import cKDTree
-        import pygcransac
     except ImportError as exc:
         raise RuntimeError("GC-RANSAC requires scipy and pygcransac") from exc
     source_cloud, source_features = _fpfh_cloud_and_features(source, voxel_size)
@@ -137,20 +187,12 @@ def gcransac_fpfh_registration(
     matches = np.flatnonzero(source_indices[target_indices] == np.arange(len(source_points)))
     if len(matches) < 3:
         raise RuntimeError(f"GC-RANSAC found only {len(matches)} mutual FPFH correspondences")
-    correspondences = np.concatenate([source_points[matches], target_points[target_indices[matches]]], axis=1).astype(np.float64)
     feature_distance = np.linalg.norm(source_features[matches] - target_features[target_indices[matches]], axis=1)
     probabilities = np.exp(-feature_distance / max(float(np.median(feature_distance)), 1e-6))
-    model, inliers = pygcransac.findRigidTransform(
-        correspondences,
-        probabilities.astype(np.float64),
-        threshold=correspondence_distance,
-        conf=0.999,
-        max_iters=10000,
-        neighborhood=0,
-        use_space_partitioning=True,
+    transform, _ = gcransac_from_correspondences(
+        source_points[matches],
+        target_points[target_indices[matches]],
+        probabilities,
+        correspondence_distance=correspondence_distance,
     )
-    if model is None or int(np.sum(inliers)) < 3:
-        raise RuntimeError("GC-RANSAC could not estimate a transform")
-    # pygcransac uses row-vector homogeneous coordinates; PointReg uses active
-    # column-vector transforms, so transpose its 4x4 output.
-    return np.asarray(model, dtype=float).T
+    return transform

@@ -26,6 +26,19 @@ class RegistrationConfig:
     geotransformer_num_points: int = 717
     success_rotation_deg: float = 5.0
     success_translation_ratio: float = 0.02
+    adaptive_trim: bool = False
+    min_trim_fraction: float = 0.35
+    multi_score_points: int = 1200
+    multi_grid_rotations: int = 4000
+    multi_seed_count: int = 20
+    multi_climb_rounds: int = 25
+    multi_refine_seeds: int = 6
+    multi_refine_samples: int = 20
+    multi_violation_gate: float = 0.016
+    multi_min_fitness: float = 0.08
+    multi_lock_span_deg: float = 4.0
+    multi_lock_step_deg: float = 1.3
+    multi_lock_top: int = 6
 
     def validate(self) -> None:
         if self.voxel_size < 0 or self.max_correspondence_distance <= 0:
@@ -36,6 +49,10 @@ class RegistrationConfig:
             raise ValueError("max_iterations must be >= 1 and min_correspondences >= 3")
         if self.geotransformer_num_points < 3:
             raise ValueError("geotransformer_num_points must be >= 3")
+        if self.adaptive_trim and not 0 < self.min_trim_fraction <= self.trim_fraction:
+            raise ValueError("min_trim_fraction must be in (0, trim_fraction]")
+        if self.multi_grid_rotations < 100 or self.multi_refine_seeds < 1 or self.multi_score_points < 100:
+            raise ValueError("invalid global-search settings")
 
 
 @dataclass(slots=True)

@@ -30,6 +30,21 @@ def preprocess_points(points: np.ndarray, voxel_size: float, remove_outliers: bo
     return np.asarray(filtered.points)
 
 
+def estimate_outward_normals(points: np.ndarray, radius: float) -> np.ndarray | None:
+    """Estimate partial-scan normals oriented away from the cloud centroid."""
+    try:
+        import open3d as o3d
+    except ImportError:
+        return None
+    points = np.asarray(points, dtype=float)
+    if len(points) < 3:
+        return None
+    cloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points))
+    cloud.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=radius, max_nn=30))
+    cloud.orient_normals_towards_camera_location(points.mean(axis=0))
+    return -np.asarray(cloud.normals)
+
+
 def bounding_box_diagonal(*clouds: np.ndarray) -> float:
     valid = [np.asarray(c) for c in clouds if len(c)]
     if not valid:

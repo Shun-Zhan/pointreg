@@ -26,10 +26,21 @@ def solve_rigid_svd(source: np.ndarray, target: np.ndarray) -> np.ndarray:
     return make_transform(rotation, translation)
 
 
+def _effective_trim_fraction(distances: np.ndarray, config: RegistrationConfig) -> float:
+    """Tighten trimming when the current pose has little geometric support."""
+    if not config.adaptive_trim or not len(distances):
+        return config.trim_fraction
+    inlier_ratio = float(np.mean(distances <= config.max_correspondence_distance))
+    if inlier_ratio >= 0.6:
+        return config.trim_fraction
+    return float(np.clip(1.25 * inlier_ratio, config.min_trim_fraction, config.trim_fraction))
+
+
 def _select_correspondences(distances: np.ndarray, config: RegistrationConfig) -> np.ndarray:
     valid_indices = np.flatnonzero(distances <= config.max_correspondence_distance)
-    if len(valid_indices) >= config.min_correspondences and config.trim_fraction < 1:
-        keep = max(config.min_correspondences, int(len(valid_indices) * config.trim_fraction))
+    trim_fraction = _effective_trim_fraction(distances, config)
+    if len(valid_indices) >= config.min_correspondences and trim_fraction < 1:
+        keep = max(config.min_correspondences, int(len(valid_indices) * trim_fraction))
         valid_indices = valid_indices[np.argsort(distances[valid_indices])[:keep]]
     return valid_indices
 
