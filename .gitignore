@@ -8,5 +8,27 @@ outputs/
 tmp/
 output/
 *.mp4
+
+# Keep only the two reproducible GeoTransformer checkpoints in version control.
+checkpoints/*
+!checkpoints/geotransformer-3dmatch.pth.tar
+!checkpoints/geotransformer-bunny-3dmatch-ft.pth.tar
+
+# Vendored GeoTransformer: source code is needed at runtime; training datasets,
+# examples, archives and optional native-extension source are not.
+third_party/GeoTransformer*.zip
+third_party/GeoTransformer-main/assets/
+third_party/GeoTransformer-main/data/
+third_party/GeoTransformer-main/extensions/
+third_party/GeoTransformer-main/geotransformer/extensions/
+third_party/GeoTransformer-main/experiments/geotransformer.kitti.*/
+third_party/GeoTransformer-main/experiments/geotransformer.modelnet.*/
+third_party/GeoTransformer-main/geotransformer/datasets/
+third_party/GeoTransformer-main/geotransformer/engine/
+third_party/GeoTransformer-main/experiments/geotransformer.3dmatch.stage4.gse.k3.max.oacl.stage2.sinkhorn/*
+!third_party/GeoTransformer-main/experiments/geotransformer.3dmatch.stage4.gse.k3.max.oacl.stage2.sinkhorn/backbone.py
+!third_party/GeoTransformer-main/experiments/geotransformer.3dmatch.stage4.gse.k3.max.oacl.stage2.sinkhorn/config.py
+!third_party/GeoTransformer-main/experiments/geotransformer.3dmatch.stage4.gse.k3.max.oacl.stage2.sinkhorn/loss.py
+!third_party/GeoTransformer-main/experiments/geotransformer.3dmatch.stage4.gse.k3.max.oacl.stage2.sinkhorn/model.py
 /专业课程设计-王小华2026.pdf
 /三维点云配准算法的研究_赵丹丹.pdf

@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 import numpy as np
 
-CoarseMethod = Literal["none", "pca", "fpfh"]
+CoarseMethod = Literal["none", "pca", "fpfh", "fpfh_multiscale", "gcransac", "geotransformer"]
 FineMethod = Literal["custom_icp", "point_to_plane"]
 
 
@@ -22,6 +22,8 @@ class RegistrationConfig:
     min_correspondences: int = 20
     remove_outliers: bool = False
     random_seed: int = 42
+    geotransformer_checkpoint: str | None = None
+    geotransformer_num_points: int = 717
     success_rotation_deg: float = 5.0
     success_translation_ratio: float = 0.02
 
@@ -32,6 +34,8 @@ class RegistrationConfig:
             raise ValueError("trim_fraction must be in (0, 1]")
         if self.max_iterations < 1 or self.min_correspondences < 3:
             raise ValueError("max_iterations must be >= 1 and min_correspondences >= 3")
+        if self.geotransformer_num_points < 3:
+            raise ValueError("geotransformer_num_points must be >= 3")
 
 
 @dataclass(slots=True)

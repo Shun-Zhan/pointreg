@@ -5,7 +5,8 @@ from time import perf_counter
 
 import numpy as np
 
-from .coarse import fpfh_registration, pca_registration
+from .coarse import fpfh_registration, gcransac_fpfh_registration, multiscale_fpfh_registration, pca_registration
+from .geotransformer import geotransformer_registration
 from .icp import custom_icp
 from .io import read_points
 from .metrics import alignment_metrics, pose_errors
@@ -56,6 +57,22 @@ def register_pair(source: str | Path | np.ndarray, target: str | Path | np.ndarr
             transform = pca_registration(source_points, target_points)
         elif initial is None and config.coarse_method == "fpfh":
             transform = fpfh_registration(source_points, target_points, config.voxel_size, config.random_seed)
+        elif initial is None and config.coarse_method == "fpfh_multiscale":
+            transform = multiscale_fpfh_registration(
+                source_points, target_points, config.voxel_size, config.random_seed, config.max_correspondence_distance
+            )
+        elif initial is None and config.coarse_method == "gcransac":
+            transform = gcransac_fpfh_registration(
+                source_points, target_points, config.voxel_size, config.max_correspondence_distance
+            )
+        elif initial is None and config.coarse_method == "geotransformer":
+            transform = geotransformer_registration(
+                source_points,
+                target_points,
+                checkpoint=config.geotransformer_checkpoint,
+                num_points=config.geotransformer_num_points,
+                seed=config.random_seed,
+            )
         result.timings_ms["coarse"] = (perf_counter() - started) * 1000
 
         started = perf_counter()

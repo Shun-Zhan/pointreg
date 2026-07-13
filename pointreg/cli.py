@@ -19,12 +19,13 @@ def parser() -> argparse.ArgumentParser:
     pair.add_argument("source", type=Path)
     pair.add_argument("target", type=Path)
     pair.add_argument("--conf", type=Path)
-    pair.add_argument("--coarse", choices=["none", "pca", "fpfh"], default="fpfh")
+    pair.add_argument("--coarse", choices=["none", "pca", "fpfh", "fpfh_multiscale", "gcransac", "geotransformer"], default="fpfh")
     pair.add_argument("--fine", choices=["custom_icp", "point_to_plane"], default="custom_icp")
     pair.add_argument("--voxel", type=float, default=.0025)
     pair.add_argument("--distance", type=float, default=.01)
     pair.add_argument("--trim", type=float, default=.8)
     pair.add_argument("--iterations", type=int, default=60)
+    pair.add_argument("--geotransformer-checkpoint", type=Path, help="ModelNet checkpoint path; defaults to checkpoints/geotransformer-modelnet.pth.tar")
     pair.add_argument("--output", type=Path, default=Path("outputs/latest"))
     pair.add_argument("--open-cloudcompare", action="store_true")
     batch = commands.add_parser("batch", help="运行算法对比实验")
@@ -49,7 +50,8 @@ def main(argv: list[str] | None = None) -> int:
             print(frame.to_string(index=False))
         return 0
     config = RegistrationConfig(coarse_method=args.coarse, fine_method=args.fine, voxel_size=args.voxel,
-                                max_correspondence_distance=args.distance, trim_fraction=args.trim, max_iterations=args.iterations)
+                                max_correspondence_distance=args.distance, trim_fraction=args.trim, max_iterations=args.iterations,
+                                geotransformer_checkpoint=str(args.geotransformer_checkpoint) if args.geotransformer_checkpoint else None)
     ground_truth = None
     if args.conf:
         poses = parse_bun_conf(args.conf)
