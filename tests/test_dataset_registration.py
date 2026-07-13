@@ -27,7 +27,7 @@ def test_fpfh_registration_uses_only_selected_source_and_target():
 
 
 def test_direct_registration_keeps_stage_timings_pair_scoped():
-    config = RegistrationConfig(coarse_method="pca", fine_method="custom_icp", max_iterations=5)
+    config = RegistrationConfig(coarse_method="none", fine_method="custom_icp", max_iterations=5)
     result = register_pair(DATA / "bun000.ply", DATA / "bun045.ply", config)
 
     measured_stages = ["runtime_warmup", "load", "preprocess", "coarse", "fine"]

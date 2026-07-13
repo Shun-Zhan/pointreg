@@ -26,12 +26,28 @@ def solve_rigid_svd(source: np.ndarray, target: np.ndarray) -> np.ndarray:
     return make_transform(rotation, translation)
 
 
-def _select_correspondences(distances: np.ndarray, config: RegistrationConfig) -> np.ndarray:
+def _select_correspondences(distances: np.ndarray, config: RegistrationConfig) -> tuple[np.ndarray, float]:
     valid_indices = np.flatnonzero(distances <= config.max_correspondence_distance)
-    if len(valid_indices) >= config.min_correspondences and config.trim_fraction < 1:
+    selected_fraction = 1.0
+    if len(valid_indices) >= config.min_correspondences and config.adaptive_trim:
+        ordered = valid_indices[np.argsort(distances[valid_indices])]
+        minimum = max(config.min_correspondences, int(np.ceil(len(ordered) * config.trim_fraction_min)))
+        maximum = max(minimum, int(np.floor(len(ordered) * config.trim_fraction_max)))
+        fractions = np.arange(config.trim_fraction_min, config.trim_fraction_max + config.trim_fraction_step / 2,
+                              config.trim_fraction_step)
+        counts = np.unique(np.clip((len(ordered) * fractions).astype(int), minimum, maximum))
+        squared = distances[ordered] ** 2
+        cumulative = np.cumsum(squared)
+        objectives = np.array([(cumulative[count - 1] / count) / ((count / len(ordered)) ** config.trim_penalty_power)
+                               for count in counts])
+        keep = int(counts[int(np.argmin(objectives))])
+        valid_indices = ordered[:keep]
+        selected_fraction = keep / len(ordered)
+    elif len(valid_indices) >= config.min_correspondences and config.trim_fraction < 1:
         keep = max(config.min_correspondences, int(len(valid_indices) * config.trim_fraction))
         valid_indices = valid_indices[np.argsort(distances[valid_indices])[:keep]]
-    return valid_indices
+        selected_fraction = keep / len(np.flatnonzero(distances <= config.max_correspondence_distance))
+    return valid_indices, selected_fraction
 
 
 def custom_icp(source: np.ndarray, target: np.ndarray, initial: np.ndarray, config: RegistrationConfig) -> tuple[np.ndarray, list[ICPRecord], str, str]:
@@ -43,7 +59,7 @@ def custom_icp(source: np.ndarray, target: np.ndarray, initial: np.ndarray, conf
     target_index = NearestNeighborIndex(target)
     moved = apply_transform(source, transform)
     distances, indices = target_index.query(moved)
-    valid_indices = _select_correspondences(distances, config)
+    valid_indices, selected_fraction = _select_correspondences(distances, config)
     for iteration in range(1, config.max_iterations + 1):
         started = perf_counter()
         if len(valid_indices) < config.min_correspondences:
@@ -52,11 +68,12 @@ def custom_icp(source: np.ndarray, target: np.ndarray, initial: np.ndarray, conf
         transform = delta @ transform
         moved = apply_transform(source, transform)
         distances, indices = target_index.query(moved)
-        valid_indices = _select_correspondences(distances, config)
+        valid_indices, selected_fraction = _select_correspondences(distances, config)
         rmse = float(np.sqrt(np.mean(distances[valid_indices] ** 2))) if len(valid_indices) else float("inf")
         rotation_delta = rotation_angle_deg(delta[:3, :3])
         translation_delta = float(np.linalg.norm(delta[:3, 3]))
-        history.append(ICPRecord(iteration, rmse, len(valid_indices), rotation_delta, translation_delta, (perf_counter() - started) * 1000))
+        history.append(ICPRecord(iteration, rmse, len(valid_indices), rotation_delta, translation_delta,
+                                 (perf_counter() - started) * 1000, trim_fraction=selected_fraction))
         rmse_change = abs(previous_rmse - rmse)
         if rmse_change < config.rmse_tolerance and max(np.radians(rotation_delta), translation_delta) < config.transform_tolerance:
             return transform, history, "converged", "convergence tolerances reached"

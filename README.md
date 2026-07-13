@@ -1,6 +1,6 @@
 # PointReg Lab：部分重合点云配准
 
-课程设计代码实现，核心为自行编写的鲁棒 Point-to-Point ICP，并以 Open3D 的 FPFH/RANSAC 与 Point-to-Plane ICP 作为粗配准和对照。项目包含本地 Web UI、命令行、批量实验、CSV/图表和 CloudCompare 导出。
+课程设计代码实现，核心为自行编写的鲁棒 Point-to-Point ICP。粗配准聚焦三条路线：原始 FPFH/RANSAC 基线、多 RANSAC 假设 + 全云验证主方法，以及 SC² + GNC-TLS 对应级验证消融。项目包含本地 Web UI、命令行、批量实验、CSV/图表和 CloudCompare 导出。
 
 ## 1. Conda 环境
 
@@ -91,12 +91,31 @@ python -m pointreg.cli batch --all-pairs --data-dir bunny/data --output outputs/
 
 增加 `--full` 会进一步运行重叠率、体素尺度、固定随机种子的初始扰动和 10 次预热速度实验，并分别输出 CSV。
 
+运行 A/B 低重叠方案的三组重点消融和全部 90 个有序扫描对：
+
+```bash
+python -m pointreg.cli batch --ab --data-dir bunny/data --output outputs/ab_experiments
+```
+
+该命令输出重点消融、5 种配置的全组合明细、按重叠率分组的成功率汇总、配置快照和对比图。真值只用于计算误差与重叠率分组，不参与任何方法的位姿求解。
+
+运行多假设与双向全云验证实验：
+
+```bash
+python -m pointreg.cli batch --verified --data-dir bunny/data --output outputs/verified_experiments
+```
+
+主方法 `fpfh_multi_verified` 会保留最多 8 个 RANSAC 粗配准候选，每个候选执行 8 轮短 Point-to-Plane ICP，再按双向 Fitness 的调和平均和双向 Inlier RMSE 排序。FPFH 候选默认使用 top-3 双向近邻与 0.9 ratio test。候选排行会单独导出，以区分“正确候选没有生成”和“全云评分选错”。仓库中已有的旧 CSV 是收敛前的方法快照，本轮不覆盖。
+
 ## 4. 方法与评价
 
-- 粗配准：无、PCA（枚举轴排列和符号）、FPFH + RANSAC。
-- FPFH + RANSAC：只在当前源点云和目标点云之间提取 FPFH 特征并执行 RANSAC 粗配准；不会使用第三帧点云或多帧桥接图。`bun.conf` 只用于结果评分，不参与求解变换矩阵。
+- 粗配准仅对外提供三条路线：`fpfh` 原始单假设基线、`fpfh_multi_verified` 多假设全云验证主方法、`sc2_gnc` 对应级验证消融。`none` 仅供已有初值和内部实验跳过粗配准，不出现在 UI 或 CLI。
+- FPFH + RANSAC：只在当前源点云和目标点云之间提取 FPFH 特征并执行单次 RANSAC；其参数和固定截断 ICP 保持为第 0 代基线。`bun.conf` 只用于结果评分，不参与求解变换矩阵。
+- 多 RANSAC + 全云验证：使用 top-k 双向 FPFH 候选生成多组位姿，经短 Point-to-Plane ICP 后按整帧双向 Fitness 与 RMSE 选优。
 - 精配准：自研 Point-to-Point ICP、Open3D Point-to-Plane ICP。
 - 自研 ICP：对固定目标点云只构建一次 KD-tree，并在全部迭代中复用；随后执行最近邻、最大距离过滤、截断对应、SVD、反射修正、增量累计及 RMSE/位姿增量收敛。逐轮 RMSE 在应用本轮位姿增量后计算，因此曲线与该轮累计变换严格对应。
+- 自适应 TrICP：在每轮距离过滤后搜索带重叠率惩罚的截断均方误差最优比例；每轮历史会记录实际保留比例。关闭该选项时仍使用原有固定 `trim_fraction`，保持旧实验兼容。
+- SC² + GNC-TLS：先用双向一致 FPFH 对应构造距离相容性矩阵和二阶相容性分数，再从多个高分局部一致簇生成 GNC-TLS 候选，仅依据当前两帧的对应共识选择结果。该实现不依赖 TEASER++，也不会失败后静默改用第三帧或真值。
 - 低重叠或近似对称组合可能出现大角度错配；UI 会把未通过阈值的结果标为不可靠。若课程要求严格只能使用源/目标两帧，这类组合应作为失败案例分析，而不是用额外扫描桥接掩盖。Bunny 全组合实验中，重叠率不低于 0.5 的组合可作为该算法的主要有效范围。
 - 指标：Fitness、Inlier RMSE、有效对应数、旋转误差、平移误差、相对平移误差和各阶段耗时。
 - 默认成功标准：旋转误差小于 5°且平移误差小于点云包围盒对角线的 2%。

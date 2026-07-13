@@ -5,7 +5,7 @@ from time import perf_counter
 
 import numpy as np
 
-from .coarse import fpfh_registration, pca_registration
+from .coarse import fpfh_multi_verified_registration, fpfh_registration, sc2_gnc_registration
 from .icp import custom_icp
 from .io import read_points
 from .metrics import alignment_metrics, pose_errors
@@ -52,11 +52,28 @@ def register_pair(source: str | Path | np.ndarray, target: str | Path | np.ndarr
 
         transform = np.eye(4) if initial is None else np.asarray(initial, dtype=float).copy()
         started = perf_counter()
-        if initial is None and config.coarse_method == "pca":
-            transform = pca_registration(source_points, target_points)
-        elif initial is None and config.coarse_method == "fpfh":
+        if initial is None and config.coarse_method == "fpfh":
             transform = fpfh_registration(source_points, target_points, config.voxel_size, config.random_seed)
+        elif initial is None and config.coarse_method == "sc2_gnc":
+            transform = sc2_gnc_registration(source_points, target_points, config)
+        elif initial is None and config.coarse_method == "fpfh_multi_verified":
+            transform, result.coarse_candidates = fpfh_multi_verified_registration(source_points, target_points, config)
         result.timings_ms["coarse"] = (perf_counter() - started) * 1000
+        if result.coarse_candidates:
+            validation_ms = sum(candidate.validation_ms for candidate in result.coarse_candidates)
+            result.timings_ms["coarse_validation"] = validation_ms
+            result.timings_ms["coarse_generation"] = max(0.0, result.timings_ms["coarse"] - validation_ms)
+            result.metrics["coarse_candidate_count"] = float(len(result.coarse_candidates))
+            winner = next(candidate for candidate in result.coarse_candidates if candidate.selected)
+            result.metrics.update(coarse_verified_fitness=winner.verified_fitness,
+                                  coarse_verified_rmse=winner.verified_rmse,
+                                  coarse_preverify_fitness=winner.pre_fitness)
+        coarse_metrics = alignment_metrics(source_points, target_points, transform, config.max_correspondence_distance)
+        result.metrics.update({f"coarse_{key}": value for key, value in coarse_metrics.items()})
+        if ground_truth is not None:
+            coarse_rotation, coarse_translation = pose_errors(transform, ground_truth)
+            result.metrics["coarse_rotation_error_deg"] = coarse_rotation
+            result.metrics["coarse_translation_error"] = coarse_translation
 
         started = perf_counter()
         if config.fine_method == "custom_icp":
@@ -67,8 +84,13 @@ def register_pair(source: str | Path | np.ndarray, target: str | Path | np.ndarr
         result.timings_ms["fine"] = (perf_counter() - started) * 1000
         result.transformation, result.status, result.message = transform, status, message
         result.metrics.update(alignment_metrics(source_points, target_points, transform, config.max_correspondence_distance))
+        if result.history:
+            result.metrics["estimated_trim_fraction"] = result.history[-1].trim_fraction
         diagonal = bounding_box_diagonal(source_raw, target_raw)
         result.metrics["bbox_diagonal"] = diagonal
+        if "coarse_translation_error" in result.metrics:
+            result.metrics["coarse_translation_error_ratio"] = (
+                result.metrics["coarse_translation_error"] / diagonal if diagonal else float("inf"))
         if ground_truth is not None:
             rotation_error, translation_error = pose_errors(transform, ground_truth)
             result.metrics.update(rotation_error_deg=rotation_error, translation_error=translation_error,

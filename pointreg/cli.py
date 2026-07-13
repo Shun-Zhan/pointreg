@@ -19,12 +19,17 @@ def parser() -> argparse.ArgumentParser:
     pair.add_argument("source", type=Path)
     pair.add_argument("target", type=Path)
     pair.add_argument("--conf", type=Path)
-    pair.add_argument("--coarse", choices=["none", "pca", "fpfh"], default="fpfh")
+    pair.add_argument("--coarse", choices=["fpfh", "fpfh_multi_verified", "sc2_gnc"], default="fpfh")
     pair.add_argument("--fine", choices=["custom_icp", "point_to_plane"], default="custom_icp")
     pair.add_argument("--voxel", type=float, default=.0025)
     pair.add_argument("--distance", type=float, default=.01)
     pair.add_argument("--trim", type=float, default=.8)
+    pair.add_argument("--adaptive-trim", action="store_true")
     pair.add_argument("--iterations", type=int, default=60)
+    pair.add_argument("--hypotheses", type=int, default=8)
+    pair.add_argument("--feature-top-k", type=int, default=3)
+    pair.add_argument("--feature-ratio", type=float, default=.9)
+    pair.add_argument("--validation-iterations", type=int, default=8)
     pair.add_argument("--output", type=Path, default=Path("outputs/latest"))
     pair.add_argument("--open-cloudcompare", action="store_true")
     batch = commands.add_parser("batch", help="运行算法对比实验")
@@ -32,13 +37,23 @@ def parser() -> argparse.ArgumentParser:
     batch.add_argument("--output", type=Path, default=Path("outputs/experiments"))
     batch.add_argument("--all-pairs", action="store_true", help="遍历 bun.conf 中所有有序两帧组合")
     batch.add_argument("--full", action="store_true", help="运行扰动、重叠、体素与速度完整实验")
+    batch.add_argument("--ab", action="store_true", help="运行 A/B 重点消融和全部90有序对实验")
+    batch.add_argument("--verified", action="store_true", help="运行全云验证与多假设粗配准实验")
     return root
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     if args.command == "batch":
-        if args.all_pairs:
+        if args.verified:
+            from .experiments import run_verified_experiments
+            frames = run_verified_experiments(args.data_dir, args.output)
+            print("\n".join(f"{name}: {len(frame)} rows" for name, frame in frames.items()))
+        elif args.ab:
+            from .experiments import run_ab_experiments
+            frames = run_ab_experiments(args.data_dir, args.output)
+            print("\n".join(f"{name}: {len(frame)} rows" for name, frame in frames.items()))
+        elif args.all_pairs:
             frame = run_all_pairs(args.data_dir, args.output)
             print(frame.to_string(index=False))
         elif args.full:
@@ -49,7 +64,11 @@ def main(argv: list[str] | None = None) -> int:
             print(frame.to_string(index=False))
         return 0
     config = RegistrationConfig(coarse_method=args.coarse, fine_method=args.fine, voxel_size=args.voxel,
-                                max_correspondence_distance=args.distance, trim_fraction=args.trim, max_iterations=args.iterations)
+                                max_correspondence_distance=args.distance, trim_fraction=args.trim,
+                                adaptive_trim=args.adaptive_trim, max_iterations=args.iterations,
+                                coarse_hypotheses=args.hypotheses, feature_match_top_k=args.feature_top_k,
+                                feature_ratio_threshold=args.feature_ratio,
+                                validation_icp_iterations=args.validation_iterations)
     ground_truth = None
     if args.conf:
         poses = parse_bun_conf(args.conf)

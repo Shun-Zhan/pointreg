@@ -10,6 +10,10 @@ from pointreg.transforms import make_transform
 def test_config_validation():
     with pytest.raises(ValueError):
         RegistrationConfig(trim_fraction=0).validate()
+    with pytest.raises(ValueError):
+        RegistrationConfig(feature_ratio_threshold=1.1).validate()
+    with pytest.raises(ValueError):
+        RegistrationConfig(coarse_hypotheses=0).validate()
 
 
 def test_pose_and_overlap_metrics():
@@ -24,4 +28,3 @@ def test_pipeline_returns_failure_instead_of_crashing():
     result = register_pair(np.empty((0, 3)), np.ones((3, 3)), RegistrationConfig(coarse_method="none"))
     assert result.status == "failed"
     assert not result.success
-

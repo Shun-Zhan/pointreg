@@ -255,15 +255,26 @@ with st.sidebar:
     st.header("实验配置")
     source_name = st.selectbox("源点云", names, index=names.index("bun000") if "bun000" in names else 0, key="source")
     target_name = st.selectbox("目标点云", names, index=names.index("bun045") if "bun045" in names else min(1, len(names)-1), key="target")
-    coarse = st.selectbox("粗配准", ["fpfh", "pca", "none"], format_func={"fpfh":"FPFH + RANSAC", "pca":"PCA 主轴", "none":"无"}.get, key="coarse")
+    coarse = st.selectbox("粗配准", ["fpfh", "fpfh_multi_verified", "sc2_gnc"],
+                          format_func={"fpfh":"FPFH + RANSAC（初始基线）",
+                                       "fpfh_multi_verified":"多 RANSAC + 全云验证（主推）",
+                                       "sc2_gnc":"FPFH + SC² + GNC-TLS（消融）"}.get,
+                          key="coarse")
     fine = st.selectbox("精配准", ["custom_icp", "point_to_plane"], format_func={"custom_icp":"自研 Point-to-Point ICP", "point_to_plane":"Open3D Point-to-Plane"}.get, key="fine")
     voxel = st.number_input("体素尺寸", min_value=0.0001, max_value=0.02, value=0.0025, step=0.0005, format="%.4f", key="voxel")
     distance = st.number_input("最大对应距离", min_value=0.0005, max_value=0.1, value=0.01, step=0.001, format="%.4f", key="distance")
     trim = st.slider("保留对应比例", .2, 1.0, .8, .05, key="trim")
+    adaptive_trim = st.checkbox("自适应截断 TrICP", value=False, key="adaptive_trim")
     iterations = st.slider("最大迭代次数", 5, 200, 60, 5, key="iterations")
+    hypotheses = st.slider("粗配准候选数", 1, 16, 8, 1, key="hypotheses")
+    feature_top_k = st.slider("FPFH 双向近邻 Top-K", 1, 8, 3, 1, key="feature_top_k")
+    feature_ratio = st.slider("FPFH Ratio 阈值", .5, 1.0, .9, .05, key="feature_ratio")
+    validation_iterations = st.slider("候选验证 ICP 轮数", 0, 20, 8, 1, key="validation_iterations")
     run = st.button("▶ 运行配准", type="primary", use_container_width=True)
     if st.button("恢复默认值", use_container_width=True):
-        for key in ["source","target","coarse","fine","voxel","distance","trim","iterations","result","selection"]:
+        for key in ["source","target","coarse","fine","voxel","distance","trim","adaptive_trim",
+                    "iterations","hypotheses","feature_top_k","feature_ratio",
+                    "validation_iterations","result","selection"]:
             st.session_state.pop(key, None)
         st.rerun()
 
@@ -287,7 +298,13 @@ def cloud_figure(source: np.ndarray, target: np.ndarray, transform: np.ndarray |
 source_path, target_path = DATA / f"{source_name}.ply", DATA / f"{target_name}.ply"
 source, target = read_points(source_path), read_points(target_path)
 if run:
-    config = RegistrationConfig(coarse_method=coarse, fine_method=fine, voxel_size=voxel, max_correspondence_distance=distance, trim_fraction=trim, max_iterations=iterations)
+    config = RegistrationConfig(coarse_method=coarse, fine_method=fine, voxel_size=voxel,
+                                max_correspondence_distance=distance, trim_fraction=trim,
+                                adaptive_trim=adaptive_trim, max_iterations=iterations,
+                                coarse_hypotheses=hypotheses,
+                                feature_match_top_k=feature_top_k,
+                                feature_ratio_threshold=feature_ratio,
+                                validation_icp_iterations=validation_iterations)
     gt = None
     st.session_state.overlap = None
     conf = DATA / "bun.conf"
