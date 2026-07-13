@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from time import perf_counter
 
@@ -10,7 +11,7 @@ from .icp import custom_icp
 from .io import read_points
 from .metrics import alignment_metrics, pose_errors
 from .models import RegistrationConfig, RegistrationResult
-from .preprocessing import bounding_box_diagonal, preprocess_points
+from .preprocessing import bounding_box_diagonal, preprocess_points, voxel_downsample
 from .runtime import preload_open3d
 
 
@@ -29,6 +30,37 @@ def _point_to_plane(source: np.ndarray, target: np.ndarray, initial: np.ndarray,
     )
     status = "converged" if result.fitness > 0 else "failed"
     return np.asarray(result.transformation), status, f"Open3D fitness={result.fitness:.4f}"
+
+
+def _sample_points(points: np.ndarray, limit: int) -> np.ndarray:
+    if len(points) <= limit:
+        return points
+    return points[:: max(1, len(points) // limit)]
+
+
+def _select_best_hypothesis(source: np.ndarray, target: np.ndarray, config: RegistrationConfig) -> tuple[np.ndarray, str]:
+    """Run the global two-cloud pose search (see GlobalRegistrationSearch)."""
+    from .global_search import GlobalRegistrationSearch
+    return GlobalRegistrationSearch(source, target, config).run()
+
+
+def _run_fine(source: np.ndarray, target: np.ndarray, initial: np.ndarray, config: RegistrationConfig) -> tuple[np.ndarray, list, str, str]:
+    """Coarse-to-fine custom ICP: a wide-basin pass on coarser data, then full resolution."""
+    transform = initial
+    history: list = []
+    if config.multiscale_fine:
+        coarse_source = voxel_downsample(source, config.voxel_size * 2)
+        coarse_target = voxel_downsample(target, config.voxel_size * 2)
+        coarse_config = replace(config, max_correspondence_distance=config.max_correspondence_distance * 2,
+                                max_iterations=max(10, config.max_iterations // 2))
+        transform, coarse_history, status, _ = custom_icp(coarse_source, coarse_target, transform, coarse_config)
+        if status == "failed":
+            transform = initial
+        else:
+            history.extend(coarse_history)
+    transform, fine_history, status, message = custom_icp(source, target, transform, config)
+    history.extend(fine_history)
+    return transform, history, status, message
 
 
 def register_pair(source: str | Path | np.ndarray, target: str | Path | np.ndarray, config: RegistrationConfig | None = None, *, ground_truth: np.ndarray | None = None, initial: np.ndarray | None = None) -> RegistrationResult:
@@ -51,20 +83,29 @@ def register_pair(source: str | Path | np.ndarray, target: str | Path | np.ndarr
         result.timings_ms["preprocess"] = (perf_counter() - started) * 1000
 
         transform = np.eye(4) if initial is None else np.asarray(initial, dtype=float).copy()
+        hypothesis_name = ""
         started = perf_counter()
         if initial is None and config.coarse_method == "pca":
             transform = pca_registration(source_points, target_points)
         elif initial is None and config.coarse_method == "fpfh":
             transform = fpfh_registration(source_points, target_points, config.voxel_size, config.random_seed)
+        elif initial is None and config.coarse_method == "multi":
+            transform, hypothesis_name = _select_best_hypothesis(source_points, target_points, config)
         result.timings_ms["coarse"] = (perf_counter() - started) * 1000
 
         started = perf_counter()
-        if config.fine_method == "custom_icp":
-            transform, history, status, message = custom_icp(source_points, target_points, transform, config)
+        if initial is None and config.coarse_method == "multi":
+            # 全局搜索内部已完成紧点到面终配准；宽阈值 trimmed ICP 会把低重叠
+            # 正确姿态拖向高 fitness 的错误局部最优，这里不再追加精配准。
+            status, message = "converged", "global search finished"
+        elif config.fine_method == "custom_icp":
+            transform, history, status, message = _run_fine(source_points, target_points, transform, config)
             result.history = history
         else:
             transform, status, message = _point_to_plane(source_points, target_points, transform, config)
         result.timings_ms["fine"] = (perf_counter() - started) * 1000
+        if hypothesis_name:
+            message = f"{message} | hypothesis={hypothesis_name}"
         result.transformation, result.status, result.message = transform, status, message
         result.metrics.update(alignment_metrics(source_points, target_points, transform, config.max_correspondence_distance))
         diagonal = bounding_box_diagonal(source_raw, target_raw)
