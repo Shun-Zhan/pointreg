@@ -7,4 +7,9 @@ streamlit>=1.36,<2
 PyYAML>=6,<7
 pytest>=8,<9
 open3d==0.19.0
-
+torch>=2.0
+pygcransac==0.1.1
+coloredlogs>=15,<16
+easydict>=1.13,<2
+einops>=0.8,<1
+ipdb>=0.13,<1

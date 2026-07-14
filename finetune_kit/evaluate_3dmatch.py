@@ -29,6 +29,7 @@ from pointreg.geotransformer import (
     GeoTransformerCorrespondences,
     geotransformer_3dmatch_correspondences,
 )
+from pointreg.fusion import build_fusion_seed_candidates
 from pointreg.global_search import GlobalRegistrationSearch
 from pointreg.icp import custom_icp
 from pointreg.io import parse_bun_conf, read_points
@@ -203,39 +204,6 @@ def _pose_metrics(transform: np.ndarray, ground_truth: np.ndarray, diagonal: flo
     }
 
 
-def _fusion_seed_candidates(
-    output: GeoTransformerCorrespondences,
-    source: np.ndarray,
-    target: np.ndarray,
-    voxel_size: float,
-) -> tuple[dict[str, np.ndarray], dict[str, int], dict[str, str]]:
-    candidates: dict[str, np.ndarray] = {"lgr": output.lgr_transform}
-    inlier_counts: dict[str, int] = {}
-    errors: dict[str, str] = {}
-    for threshold in (0.008, 0.010, 0.012):
-        for seed in (0, 1, 42):
-            label = f"geotransformer_gcransac_t{threshold:.3f}_s{seed}"
-            permutation = np.random.default_rng(seed).permutation(len(output.source_points))
-            try:
-                transform, inliers = gcransac_from_correspondences(
-                    output.source_points[permutation],
-                    output.target_points[permutation],
-                    output.scores[permutation],
-                    correspondence_distance=threshold,
-                    max_iters=10000,
-                    seed=seed,
-                )
-                candidates[label] = transform
-                inlier_counts[label] = int(inliers.sum())
-            except Exception as exc:
-                errors[label] = str(exc)
-    try:
-        candidates["fpfh"] = fpfh_registration(source, target, voxel_size, seed=42)
-    except Exception as exc:
-        errors["fpfh"] = str(exc)
-    return candidates, inlier_counts, errors
-
-
 def evaluate_pair(
     source_name: str,
     target_name: str,
@@ -264,7 +232,7 @@ def evaluate_pair(
     global_search: dict[str, object] | None = None
 
     if backend == "fusion":
-        candidates, fusion_inliers, errors = _fusion_seed_candidates(
+        candidates, fusion_inliers, errors = build_fusion_seed_candidates(
             output, source, target, voxel_size
         )
         config = RegistrationConfig(
