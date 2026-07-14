@@ -10,6 +10,7 @@ import streamlit as st
 
 from pointreg.cloudcompare import export_cloudcompare, launch_cloudcompare
 from pointreg.io import parse_bun_conf, read_points
+from pointreg.metrics import symmetric_overlap
 from pointreg.models import RegistrationConfig
 from pointreg.pipeline import register_pair
 from pointreg.dataset import build_bunny_graph, register_dataset_pair
@@ -18,6 +19,7 @@ from pointreg.transforms import apply_transform, relative_transform
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "bunny" / "data"
+OVERLAP_DISTANCE = 0.01
 st.set_page_config(page_title="PointReg Lab", page_icon="◌", layout="wide")
 
 
@@ -251,20 +253,40 @@ if not files:
     st.error(f"未找到点云数据：{DATA}")
     st.stop()
 names = [p.stem for p in files]
+poses = parse_bun_conf(DATA / "bun.conf") if (DATA / "bun.conf").exists() else {}
 
 with st.sidebar:
     st.header("实验配置")
     source_name = st.selectbox("源点云", names, index=names.index("bun000") if "bun000" in names else 0, key="source")
     target_name = st.selectbox("目标点云", names, index=names.index("bun045") if "bun045" in names else min(1, len(names)-1), key="target")
+    source_path, target_path = DATA / f"{source_name}.ply", DATA / f"{target_name}.ply"
+    source, target = read_points(source_path), read_points(target_path)
+    gt = None
+    pair_overlap = None
+    if source_name in poses and target_name in poses:
+        gt = relative_transform(poses[source_name], poses[target_name])
+        pair_overlap = symmetric_overlap(source, target, gt, OVERLAP_DISTANCE)
+        st.caption(f"当前点对重合率：{pair_overlap:.3f}")
+        st.caption("基于真值位姿，仅用于实验展示，不参与配准求解。")
+    else:
+        st.caption("当前点对重合率：不可用")
     coarse = st.selectbox("粗配准", ["fpfh", "pca", "none"], format_func={"fpfh":"FPFH + RANSAC", "pca":"PCA 主轴", "none":"无"}.get, key="coarse")
     fine = st.selectbox("精配准", ["custom_icp", "point_to_plane"], format_func={"custom_icp":"自研 Point-to-Point ICP", "point_to_plane":"Open3D Point-to-Plane"}.get, key="fine")
     voxel = st.number_input("体素尺寸", min_value=0.0001, max_value=0.02, value=0.0025, step=0.0005, format="%.4f", key="voxel")
     distance = st.number_input("最大对应距离", min_value=0.0005, max_value=0.1, value=0.01, step=0.001, format="%.4f", key="distance")
     trim = st.slider("保留对应比例", .2, 1.0, .8, .05, key="trim")
     iterations = st.slider("最大迭代次数", 5, 200, 60, 5, key="iterations")
+    bridge_help = "关闭时执行严格两帧直接配准；开启时沿高重合点云路径组合变换。"
+    if coarse == "fpfh":
+        use_bridge = st.toggle("使用桥接法", value=False, key="use_bridge", help=bridge_help)
+    else:
+        st.toggle("使用桥接法", value=False, key="use_bridge_disabled", disabled=True, help="桥接法仅适用于 FPFH 粗配准。")
+        use_bridge = False
+    bridge_enabled = coarse == "fpfh" and use_bridge
+    strategy = "bridge" if bridge_enabled else "direct"
     run = st.button("▶ 运行配准", type="primary", use_container_width=True)
     if st.button("恢复默认值", use_container_width=True):
-        for key in ["source","target","coarse","fine","voxel","distance","trim","iterations","result","selection"]:
+        for key in ["source","target","coarse","fine","voxel","distance","trim","iterations","use_bridge","use_bridge_disabled","result","selection","result_overlap"]:
             st.session_state.pop(key, None)
         st.rerun()
 
@@ -285,25 +307,24 @@ def cloud_figure(source: np.ndarray, target: np.ndarray, transform: np.ndarray |
                                  zaxis=dict(showbackground=True, backgroundcolor="#F8F3EB", color="#4A4A40", gridcolor="#DED8CF", zerolinecolor="#C18C5D")))
     return fig
 
-source_path, target_path = DATA / f"{source_name}.ply", DATA / f"{target_name}.ply"
-source, target = read_points(source_path), read_points(target_path)
+run_signature = (source_name, target_name, coarse, fine, voxel, distance, trim, iterations, strategy)
 if run:
     config = RegistrationConfig(coarse_method=coarse, fine_method=fine, voxel_size=voxel, max_correspondence_distance=distance, trim_fraction=trim, max_iterations=iterations)
-    gt = None
-    conf = DATA / "bun.conf"
-    if conf.exists():
-        poses = parse_bun_conf(conf)
-        if source_name in poses and target_name in poses:
-            gt = relative_transform(poses[source_name], poses[target_name])
     with st.spinner("正在计算粗配准与 ICP…"):
-        if coarse == "fpfh":
+        if bridge_enabled:
             st.session_state.result = register_dataset_pair(DATA, source_name, target_name, config)
         else:
             st.session_state.result = register_pair(source, target, config, ground_truth=gt)
-        st.session_state.selection = (source_name, target_name)
+        st.session_state.selection = run_signature
+        st.session_state.result_overlap = pair_overlap
 
 result = st.session_state.get("result")
-if result and st.session_state.get("selection") == (source_name, target_name):
+if result and st.session_state.get("selection") == run_signature:
+    context_cols = st.columns(3)
+    result_overlap = st.session_state.get("result_overlap")
+    context_cols[0].metric("点对重合率", f"{result_overlap:.3f}" if result_overlap is not None else "不可用")
+    context_cols[1].metric("配准策略", "桥接法" if bridge_enabled else "直接两帧")
+    context_cols[2].metric("实验判定", "成功" if result.success else "失败")
     cols = st.columns(5)
     values = [("状态", result.status), ("Fitness", f"{result.metrics.get('fitness',0):.3f}"), ("RMSE", f"{result.metrics.get('rmse',float('nan')):.6f}"),
               ("旋转误差", f"{result.metrics.get('rotation_error_deg',float('nan')):.2f}°"), ("总耗时", f"{result.timings_ms.get('total',0):.2f} ms")]
@@ -312,9 +333,14 @@ if result and st.session_state.get("selection") == (source_name, target_name):
     left, right = st.columns(2)
     left.plotly_chart(cloud_figure(source, target, None, "配准前"), use_container_width=True)
     right.plotly_chart(cloud_figure(source, target, result.transformation, "配准后"), use_container_width=True)
-    tab1, tab2, tab3 = st.tabs(["收敛过程", "变换矩阵", "导出与验证"])
+    history = pd.DataFrame([asdict(item) for item in result.history])
+    tab_names = ["收敛过程", "变换矩阵", "导出与验证"]
+    if bridge_enabled:
+        tab_names.append("桥接过程")
+    tabs = st.tabs(tab_names)
+    tab1, tab2, tab3 = tabs[:3]
+    bridge_tab = tabs[3] if bridge_enabled else None
     with tab1:
-        history = pd.DataFrame([asdict(item) for item in result.history])
         if len(history):
             metric_col, note_col = st.columns([1, 3])
             metric_col.metric("累计 ICP 迭代", len(history))
@@ -339,6 +365,66 @@ if result and st.session_state.get("selection") == (source_name, target_name):
             exported = st.session_state.get("exported") or export_cloudcompare(out, source, target, result.transformation, result.to_dict())
             ok, message = launch_cloudcompare([exported["target"], exported["aligned"]])
             (st.success if ok else st.warning)(message)
+    if bridge_tab is not None:
+        with bridge_tab:
+            graph = build_bunny_graph(str(DATA.resolve()), voxel, distance, trim, iterations, 42)
+            _, bridge_path = graph.transform(source_name, target_name)
+            bridge_edges = list(zip(bridge_path, bridge_path[1:]))
+            stage_labels = [f"{edge_source}→{edge_target}" for edge_source, edge_target in bridge_edges]
+
+            path_col, hops_col = st.columns([4, 1])
+            path_col.markdown(f"**桥接路径：** {' → '.join(bridge_path)}")
+            hops_col.metric("桥接跳数", len(bridge_edges))
+
+            summary_rows = []
+            for step, stage in enumerate(stage_labels, start=1):
+                stage_history = history[history["stage"] == stage] if len(history) else pd.DataFrame()
+                final_record = stage_history.iloc[-1] if len(stage_history) else None
+                summary_rows.append({
+                    "步骤": step,
+                    "桥接边": stage,
+                    "ICP迭代数": len(stage_history),
+                    "最终RMSE": final_record["rmse"] if final_record is not None else float("nan"),
+                    "最终对应点数": int(final_record["correspondences"]) if final_record is not None else 0,
+                    "ICP耗时_ms": stage_history["elapsed_ms"].sum() if len(stage_history) else 0.0,
+                })
+            st.dataframe(
+                pd.DataFrame(summary_rows),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "最终RMSE": st.column_config.NumberColumn(format="%.6f"),
+                    "ICP耗时_ms": st.column_config.NumberColumn(format="%.2f ms"),
+                },
+            )
+
+            selected_stage = st.selectbox(
+                "查看桥接步骤",
+                stage_labels,
+                key=f"bridge_step_{source_name}_{target_name}",
+            )
+            selected_index = stage_labels.index(selected_stage)
+            step_source_name, step_target_name = bridge_edges[selected_index]
+            step_source = read_points(DATA / f"{step_source_name}.ply")
+            step_target = read_points(DATA / f"{step_target_name}.ply")
+            step_transform = graph.adjacency[step_source_name][step_target_name]
+
+            before_col, after_col = st.columns(2)
+            before_col.plotly_chart(
+                cloud_figure(step_source, step_target, None, f"第 {selected_index + 1} 跳配准前：{selected_stage}"),
+                use_container_width=True,
+            )
+            after_col.plotly_chart(
+                cloud_figure(step_source, step_target, step_transform, f"第 {selected_index + 1} 跳配准后：{selected_stage}"),
+                use_container_width=True,
+            )
+
+            selected_history = history[history["stage"] == selected_stage] if len(history) else pd.DataFrame()
+            if len(selected_history):
+                st.subheader(f"{selected_stage} 收敛过程")
+                st.line_chart(selected_history.set_index("iteration")[["rmse"]])
+            else:
+                st.info("该桥接步骤没有返回逐轮 ICP 历史。")
 else:
     st.plotly_chart(cloud_figure(source, target, None, "原始点云预览"), use_container_width=True)
     st.info("在左侧确认参数后点击“运行配准”。")
