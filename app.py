@@ -157,6 +157,65 @@ p, label,
     color: var(--muted-foreground);
 }
 
+[data-testid="stNumberInputContainer"] {
+    background: rgba(255, 255, 255, .55) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 999px !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .72);
+    overflow: hidden;
+}
+[data-testid="stNumberInputContainer"] [data-baseweb="input"],
+[data-testid="stNumberInputContainer"] [data-baseweb="base-input"],
+[data-testid="stNumberInputField"] {
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    color: var(--foreground) !important;
+    font-weight: 700;
+}
+[data-testid="stNumberInputStepDown"],
+[data-testid="stNumberInputStepUp"] {
+    background: transparent !important;
+    border: 0 !important;
+    border-left: 1px solid var(--border) !important;
+    color: var(--primary) !important;
+}
+[data-testid="stNumberInputStepDown"]:hover,
+[data-testid="stNumberInputStepUp"]:hover {
+    background: rgba(93, 112, 82, .10) !important;
+    color: #4E6246 !important;
+}
+[data-testid="stNumberInputContainer"]:focus-within {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px rgba(93, 112, 82, .18) !important;
+}
+
+[data-testid="stCheckbox"] [data-baseweb="checkbox"] > div:first-child {
+    background-color: var(--accent) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: inset 0 1px 2px rgba(44, 44, 36, .10);
+}
+[data-testid="stCheckbox"] [data-baseweb="checkbox"] > div:first-child > div {
+    background-color: var(--primary) !important;
+}
+[data-testid="stCheckbox"] [data-baseweb="checkbox"]:has(input[aria-checked="true"]) > div:first-child {
+    background-color: var(--primary) !important;
+    border-color: var(--primary) !important;
+}
+[data-testid="stCheckbox"] [data-baseweb="checkbox"]:has(input[aria-checked="true"]) > div:first-child > div {
+    background-color: var(--primary-foreground) !important;
+}
+[data-testid="stCheckbox"] [data-testid="stTooltipIcon"] {
+    color: var(--muted-foreground) !important;
+}
+[data-testid="stCheckbox"] [data-testid="stTooltipIcon"] svg {
+    stroke: currentColor !important;
+}
+[data-testid="stCheckbox"] [data-baseweb="checkbox"]:has(input:disabled) {
+    opacity: .55;
+}
+
 .stTabs [data-baseweb="tab"] {
     color: var(--muted-foreground);
     font-weight: 800;
@@ -246,7 +305,7 @@ button[kind="secondary"]:disabled {
 }
 </style>""", unsafe_allow_html=True)
 st.title("PointReg Lab")
-st.markdown('<div class="subtitle">部分重合点云配准 · 自研 ICP / FPFH / CloudCompare</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">部分重合点云配准 · ICP / FPFH / CloudCompare</div>', unsafe_allow_html=True)
 
 files = sorted(DATA.glob("*.ply"))
 if not files:
@@ -271,7 +330,7 @@ with st.sidebar:
     else:
         st.caption("当前点对重合率：不可用")
     coarse = st.selectbox("粗配准", ["fpfh", "pca", "none"], format_func={"fpfh":"FPFH + RANSAC", "pca":"PCA 主轴", "none":"无"}.get, key="coarse")
-    fine = st.selectbox("精配准", ["custom_icp", "point_to_plane"], format_func={"custom_icp":"自研 Point-to-Point ICP", "point_to_plane":"Open3D Point-to-Plane"}.get, key="fine")
+    fine = st.selectbox("精配准", ["custom_icp", "point_to_plane"], format_func={"custom_icp":"Point-to-Point ICP", "point_to_plane":"Open3D Point-to-Plane"}.get, key="fine")
     voxel = st.number_input("体素尺寸", min_value=0.0001, max_value=0.02, value=0.0025, step=0.0005, format="%.4f", key="voxel")
     distance = st.number_input("最大对应距离", min_value=0.0005, max_value=0.1, value=0.01, step=0.001, format="%.4f", key="distance")
     trim = st.slider("保留对应比例", .2, 1.0, .8, .05, key="trim")
