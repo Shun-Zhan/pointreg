@@ -19,7 +19,7 @@ from pointreg.transforms import apply_transform, relative_transform
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "bunny" / "data"
-LOW_OVERLAP_THRESHOLD = 0.30
+LOW_OVERLAP_THRESHOLD = 0.50
 OVERLAP_DISTANCE = 0.01
 LOW_OVERLAP_METHOD = "low_overlap_geotransformer"
 PRACTICAL_TRANSLATION_RATIO = 0.05

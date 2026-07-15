@@ -23,3 +23,16 @@ def test_webui_keeps_original_method_for_normal_overlap_pair():
     assert app.sidebar.selectbox[1].value == "bun045"
     assert app.sidebar.selectbox[2].value == "fpfh"
     assert not any("检测到低重合点对" in warning.value for warning in app.warning)
+
+
+def test_webui_recommends_fusion_for_pair_below_fifty_percent():
+    app = AppTest.from_file("app.py")
+    app.run(timeout=30)
+    app.selectbox(key="source").select("bun045")
+    app.selectbox(key="target").select("bun270")
+    app.run(timeout=30)
+
+    assert any("检测到低重合点对" in warning.value for warning in app.warning)
+    coarse = app.selectbox(key="coarse")
+    assert len(coarse.options) == 7
+    assert "GeoTransformer" in coarse.options[0]

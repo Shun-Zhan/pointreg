@@ -8,6 +8,7 @@ selects between LGR, GC-RANSAC and FPFH using geometry only.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 from dataclasses import replace
@@ -216,9 +217,11 @@ def evaluate_pair(
     backend: str,
 ) -> dict[str, object]:
     ground_truth = relative_transform(poses[source_name], poses[target_name])
-    source = preprocess_points(read_points(data_dir / f"{source_name}.ply"), voxel_size)
-    target = preprocess_points(read_points(data_dir / f"{target_name}.ply"), voxel_size)
-    overlap = symmetric_overlap(source, target, ground_truth, distance)
+    raw_source = read_points(data_dir / f"{source_name}.ply")
+    raw_target = read_points(data_dir / f"{target_name}.ply")
+    overlap = symmetric_overlap(raw_source, raw_target, ground_truth, distance)
+    source = preprocess_points(raw_source, voxel_size)
+    target = preprocess_points(raw_target, voxel_size)
     diagonal = bounding_box_diagonal(source, target)
     output = geotransformer_3dmatch_correspondences(
         source,
@@ -338,6 +341,7 @@ def evaluate_pair(
         "fitness": round(float(fitness), 3),
         "success_2pct": bool(final_rotation < 5.0 and final_ratio < 0.02),
         "success_3pct": bool(final_rotation < 5.0 and final_ratio < 0.03),
+        "success_practical_5pct": bool(final_rotation < 5.0 and final_ratio < 0.05),
     }
 
 
@@ -348,21 +352,81 @@ def _write_json_atomic(path: Path, value: object) -> None:
     temporary.replace(path)
 
 
+CSV_FIELDS = [
+    "pair", "source", "target", "backend", "status", "overlap",
+    "correspondence_count", "gt_inliers_0.005", "gt_inliers_0.010",
+    "gcransac_inliers", "selected_candidate", "coarse_rot_deg",
+    "coarse_tr_ratio", "final_rot_deg", "final_tr_ratio", "fitness",
+    "global_fitness", "violation", "fine_violation", "gate_passed",
+    "runtime_seconds", "success_2pct", "success_3pct",
+    "success_practical_5pct", "error",
+]
+
+
+def _write_csv_atomic(path: Path, rows: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8-sig", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=CSV_FIELDS)
+        writer.writeheader()
+        for row in rows:
+            pair = str(row.get("pair", ""))
+            source, separator, target = pair.partition("->")
+            diagnostics = row.get("correspondences") or {}
+            search = row.get("global_search") or {}
+            timings = search.get("timings_ms") or {}
+            writer.writerow({
+                "pair": pair,
+                "source": source,
+                "target": target if separator else "",
+                "backend": row.get("backend", ""),
+                "status": row.get("status", ""),
+                "overlap": row.get("overlap", ""),
+                "correspondence_count": diagnostics.get("count", ""),
+                "gt_inliers_0.005": diagnostics.get("gt_inliers_0.005", ""),
+                "gt_inliers_0.010": diagnostics.get("gt_inliers_0.010", ""),
+                "gcransac_inliers": row.get("gcransac_inliers", ""),
+                "selected_candidate": row.get("selected_candidate", ""),
+                "coarse_rot_deg": row.get("coarse_rot", ""),
+                "coarse_tr_ratio": row.get("coarse_tr_ratio", ""),
+                "final_rot_deg": row.get("final_rot", ""),
+                "final_tr_ratio": row.get("final_tr_ratio", ""),
+                "fitness": row.get("fitness", ""),
+                "global_fitness": search.get("fitness", ""),
+                "violation": search.get("violation", ""),
+                "fine_violation": search.get("fine_violation", ""),
+                "gate_passed": search.get("gate_passed", ""),
+                "runtime_seconds": (
+                    round(float(timings["total"]) / 1000.0, 3)
+                    if "total" in timings else ""
+                ),
+                "success_2pct": row.get("success_2pct", ""),
+                "success_3pct": row.get("success_3pct", ""),
+                "success_practical_5pct": row.get("success_practical_5pct", ""),
+                "error": row.get("error", ""),
+            })
+    temporary.replace(path)
+
+
 def _evaluation_summary(rows: list[dict[str, object]], requested_pairs: int) -> dict[str, object]:
     completed = [row for row in rows if row.get("status") == "ok"]
     errors = [row for row in rows if row.get("status") == "error"]
     strict = sum(bool(row.get("success_2pct")) for row in completed)
     relaxed = sum(bool(row.get("success_3pct")) for row in completed)
+    practical = sum(bool(row.get("success_practical_5pct")) for row in completed)
     return {
         "requested_pairs": requested_pairs,
         "completed_pairs": len(completed),
         "error_pairs": len(errors),
         "success_2pct": strict,
         "success_3pct": relaxed,
+        "success_practical_5pct": practical,
         "success_rate_2pct_completed": strict / len(completed) if completed else 0.0,
         "success_rate_3pct_completed": relaxed / len(completed) if completed else 0.0,
+        "success_rate_practical_5pct_completed": practical / len(completed) if completed else 0.0,
         "success_rate_2pct_requested": strict / requested_pairs if requested_pairs else 0.0,
         "success_rate_3pct_requested": relaxed / requested_pairs if requested_pairs else 0.0,
+        "success_rate_practical_5pct_requested": practical / requested_pairs if requested_pairs else 0.0,
         "failed_pairs": [row["pair"] for row in completed if not row.get("success_2pct")],
         "errors": [{"pair": row["pair"], "error": row.get("error", "")} for row in errors],
     }
@@ -385,12 +449,12 @@ def main() -> None:
 
     poses = parse_bun_conf(args.data_dir / "bun.conf")
     pairs = list(permutations(poses.keys(), 2)) if args.all_pairs else DEFAULT_PAIRS
+    selection_overlaps: dict[str, float] = {}
     if args.overlap_max is not None:
         if not 0 < args.overlap_max <= 1:
             parser.error("--overlap-max must be in (0, 1]")
         cloud_cache = {
-            name: preprocess_points(read_points(args.data_dir / f"{name}.ply"), args.voxel)
-            for name in poses
+            name: read_points(args.data_dir / f"{name}.ply") for name in poses
         }
         filtered_pairs = []
         for source_name, target_name in pairs:
@@ -400,6 +464,7 @@ def main() -> None:
                 relative_transform(poses[source_name], poses[target_name]),
                 args.distance,
             )
+            selection_overlaps[f"{source_name}->{target_name}"] = overlap
             if overlap < args.overlap_max:
                 filtered_pairs.append((source_name, target_name))
         pairs = filtered_pairs
@@ -409,10 +474,20 @@ def main() -> None:
     rows: list[dict[str, object]] = []
     if args.resume and args.output.is_file():
         rows = json.loads(args.output.read_text(encoding="utf-8"))
+        for row in rows:
+            pair_name = str(row.get("pair", ""))
+            if pair_name in selection_overlaps:
+                row["overlap"] = round(selection_overlaps[pair_name], 3)
+            if row.get("status", "ok") == "ok":
+                row["success_practical_5pct"] = bool(
+                    float(row.get("final_rot", float("inf"))) < 5.0
+                    and float(row.get("final_tr_ratio", float("inf"))) < 0.05
+                )
     completed_pairs = {
         row["pair"] for row in rows if row.get("status", "ok") == "ok"
     }
     summary_path = args.output.with_suffix(".summary.json")
+    csv_path = args.output.with_suffix(".csv")
     for index, (source_name, target_name) in enumerate(pairs, start=1):
         pair_name = f"{source_name}->{target_name}"
         if pair_name in completed_pairs:
@@ -443,8 +518,10 @@ def main() -> None:
             print(f"[{index}/{len(pairs)}] {pair_name} ERROR {exc}")
         rows.append(row)
         _write_json_atomic(args.output, rows)
+        _write_csv_atomic(csv_path, rows)
         _write_json_atomic(summary_path, _evaluation_summary(rows, len(pairs)))
     _write_json_atomic(args.output, rows)
+    _write_csv_atomic(csv_path, rows)
     _write_json_atomic(summary_path, _evaluation_summary(rows, len(pairs)))
     print("saved", args.output)
     if args.backend == "robust":
