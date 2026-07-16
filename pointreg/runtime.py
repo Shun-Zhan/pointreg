@@ -1,10 +1,16 @@
+"""Open3D 运行时预热工具。
+
+首次导入 Open3D 会加载动态库、耗时较长。这里提供一次性、线程安全的预热，
+把这段冷启动开销单独计量出来，避免它混入配准各阶段的耗时统计。
+"""
+
 from __future__ import annotations
 
 from threading import Lock
 from time import perf_counter
 
-_OPEN3D_READY = False
-_OPEN3D_LOCK = Lock()
+_OPEN3D_READY = False        # 进程级标志：Open3D 是否已完成预热
+_OPEN3D_LOCK = Lock()        # 保护上面的标志，防止多线程重复预热
 
 
 def preload_open3d() -> float:
