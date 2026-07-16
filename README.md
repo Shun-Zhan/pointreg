@@ -83,6 +83,14 @@ python -m pointreg.cli batch --data-dir bunny/data --output outputs/experiments
 
 增加 `--full` 会进一步运行重叠率、体素尺度、固定随机种子的初始扰动和 10 次预热速度实验，并分别输出 CSV。
 
+运行 10 个 Bunny 扫描的全部无向点对组合，并仅对真值重合率低于 50% 的点对运行桥接法：
+
+```bash
+python -m pointreg.cli evaluate --data-dir bunny/data --output outputs/final_evaluation
+```
+
+结果写入 `final_evaluation.csv`，成功档位为旋转误差小于 5°，且平移误差分别小于包围盒对角线的 2%/3%/5%。当前代码不包含 Transformer、GC-RANSAC、violation 或自由空间门控，对应列保留为空；Open3D FPFH-RANSAC 的几何粗配内点数单独记录，不冒充 GC-RANSAC 内点。
+
 ## 4. 方法与评价
 
 - 粗配准：无、PCA（枚举轴排列和符号）、FPFH + RANSAC。

@@ -5,11 +5,11 @@ import json
 from pathlib import Path
 
 from .cloudcompare import export_cloudcompare, launch_cloudcompare
-from .experiments import run_full_suite, run_method_comparison
+from .dataset import register_dataset_pair
+from .experiments import run_final_evaluation, run_full_suite, run_method_comparison
 from .io import parse_bun_conf, read_points
 from .models import RegistrationConfig
 from .pipeline import register_pair
-from .dataset import register_dataset_pair
 from .transforms import relative_transform
 
 
@@ -32,11 +32,23 @@ def parser() -> argparse.ArgumentParser:
     batch.add_argument("--data-dir", type=Path, default=Path("bunny/data"))
     batch.add_argument("--output", type=Path, default=Path("outputs/experiments"))
     batch.add_argument("--full", action="store_true", help="运行扰动、重叠、体素与速度完整实验")
+    evaluate = commands.add_parser("evaluate", help="运行全点对最终评测")
+    evaluate.add_argument("--data-dir", type=Path, default=Path("bunny/data"))
+    evaluate.add_argument("--output", type=Path, default=Path("outputs/final_evaluation"))
+    evaluate.add_argument("--bridge-overlap", type=float, default=.50,
+                          help="仅对低于该真值重合率的点对运行桥接法")
     return root
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if args.command == "evaluate":
+        frame = run_final_evaluation(
+            args.data_dir, args.output, bridge_overlap_threshold=args.bridge_overlap
+        )
+        print(frame.groupby("方法").size().to_string())
+        print(f"CSV: {args.output / 'final_evaluation.csv'}")
+        return 0
     if args.command == "batch":
         if args.full:
             frames = run_full_suite(args.data_dir, args.output)

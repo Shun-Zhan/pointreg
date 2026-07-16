@@ -58,6 +58,23 @@ def register_pair(source: str | Path | np.ndarray, target: str | Path | np.ndarr
             transform = fpfh_registration(source_points, target_points, config.voxel_size, config.random_seed)
         result.timings_ms["coarse"] = (perf_counter() - started) * 1000
 
+        # Geometric coarse-stage metrics for batch evaluation. These are not a
+        # RANSAC implementation's internal inlier set.
+        coarse_metrics = alignment_metrics(
+            source_points, target_points, transform, config.max_correspondence_distance
+        )
+        result.metrics.update({f"coarse_{key}": value for key, value in coarse_metrics.items()})
+        if ground_truth is not None:
+            coarse_rotation_error, coarse_translation_error = pose_errors(transform, ground_truth)
+            coarse_diagonal = bounding_box_diagonal(source_raw, target_raw)
+            result.metrics.update(
+                coarse_rotation_error_deg=coarse_rotation_error,
+                coarse_translation_error=coarse_translation_error,
+                coarse_translation_error_ratio=(
+                    coarse_translation_error / coarse_diagonal if coarse_diagonal else float("inf")
+                ),
+            )
+
         started = perf_counter()
         if config.fine_method == "custom_icp":
             transform, history, status, message = custom_icp(source_points, target_points, transform, config)
