@@ -11,6 +11,7 @@ DATA = Path("bunny/data").resolve()
 
 
 def test_fpfh_registration_uses_only_selected_source_and_target():
+    """验证 FPFH 直接配准 bun000->bun045 能成功,且只走"直接"路径(不引入桥接中转)。"""
     poses = parse_bun_conf(DATA / "bun.conf")
     source_name, target_name = "bun000", "bun045"
     config = RegistrationConfig(coarse_method="fpfh", fine_method="custom_icp")
@@ -18,28 +19,31 @@ def test_fpfh_registration_uses_only_selected_source_and_target():
     result = register_pair(DATA / f"{source_name}.ply", DATA / f"{target_name}.ply", config, ground_truth=ground_truth)
 
     assert result.success
-    assert result.metrics["rotation_error_deg"] < 5.0
-    assert result.metrics["translation_error_ratio"] < 0.02
-    assert "bridge_hops" not in result.metrics
+    assert result.metrics["rotation_error_deg"] < 5.0            # 旋转误差达标
+    assert result.metrics["translation_error_ratio"] < 0.02      # 平移误差比达标(2%)
+    assert "bridge_hops" not in result.metrics                   # 确认没走桥接
     assert "bridge_graph" not in result.timings_ms
     assert len(result.history) > 0
-    assert {record.stage for record in result.history} == {"direct"}
+    assert {record.stage for record in result.history} == {"direct"}  # 全部迭代都属于"直接"阶段
 
 
 def test_direct_registration_keeps_stage_timings_pair_scoped():
+    """验证各阶段耗时都被记录且非负,总耗时不小于各阶段之和(warmup 不计入)。"""
     config = RegistrationConfig(coarse_method="pca", fine_method="custom_icp", max_iterations=5)
     result = register_pair(DATA / "bun000.ply", DATA / "bun045.ply", config)
 
     measured_stages = ["runtime_warmup", "load", "preprocess", "coarse", "fine"]
-    assert all(result.timings_ms[name] >= 0 for name in measured_stages)
+    assert all(result.timings_ms[name] >= 0 for name in measured_stages)  # 每个阶段耗时非负
     assert "bridge_graph" not in result.timings_ms
+    # 总耗时应覆盖各实测阶段之和(warmup 是一次性预热,不计入)
     assert result.timings_ms["total"] >= sum(result.timings_ms[name] for name in measured_stages if name != "runtime_warmup")
 
 
 def test_all_pairs_report_uses_direct_registration(tmp_path):
+    """验证批量跑所有点对的报告:成功、无桥接列、且落盘了 all_pairs.csv。"""
     frame = run_all_pairs(DATA, tmp_path, pairs=[("bun000", "bun045")])
 
     assert len(frame) == 1
     assert frame.iloc[0]["success"]
     assert "bridge_graph" not in frame.columns
-    assert (tmp_path / "all_pairs.csv").exists()
+    assert (tmp_path / "all_pairs.csv").exists()  # 报告文件已生成
